@@ -8,12 +8,15 @@ SCRIPTS_DIR = $(HOME)/.local/bin
 build:
 	cargo build --release --target wasm32-wasip1
 
-install: build
+install: build install-scripts
 	mkdir -p $(INSTALL_DIR)
 	cp $(TARGET) $(INSTALL_DIR)/$(PLUGIN_NAME).wasm
-	@echo "Installed to $(INSTALL_DIR)/$(PLUGIN_NAME).wasm"
 	@echo ""
-	@echo "Add to ~/.config/zellij/config.kdl:"
+	@echo "✅ Installed:"
+	@echo "   • Plugin: $(INSTALL_DIR)/$(PLUGIN_NAME).wasm"
+	@echo "   • Scripts: $(SCRIPTS_DIR)/zellij-tab-status, $(SCRIPTS_DIR)/zellij-rename-tab"
+	@echo ""
+	@echo "📝 Add to ~/.config/zellij/config.kdl:"
 	@echo '  load_plugins {'
 	@echo '      "file:$(INSTALL_DIR)/$(PLUGIN_NAME).wasm"'
 	@echo '  }'
