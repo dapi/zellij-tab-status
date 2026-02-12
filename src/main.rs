@@ -33,7 +33,7 @@ register_plugin!(State);
 
 impl ZellijPlugin for State {
     fn load(&mut self, _configuration: BTreeMap<String, String>) {
-        eprintln!("[tab-status] Plugin loaded");
+        eprintln!("[tab-status] Plugin loaded v{}", env!("CARGO_PKG_VERSION"));
 
         request_permission(&[
             PermissionType::ReadApplicationState,
@@ -138,7 +138,7 @@ impl State {
             return false;
         };
 
-        // tab_id for rename_tab is 1-indexed position
+        // rename_tab uses 1-indexed position
         let tab_id = (tab_position + 1) as u32;
 
         eprintln!(
@@ -176,6 +176,7 @@ impl State {
         let current_name = current_name.clone(); // Clone to release borrow
 
         let base_name = Self::extract_base_name(&current_name);
+        // rename_tab uses 1-indexed position
         let tab_id = (tab_position + 1) as u32;
 
         match status.action.as_str() {
@@ -270,12 +271,13 @@ impl State {
                         continue;
                     }
 
+                    // Use tab.position for rename_tab API, not display_index
                     self.pane_to_tab
-                        .insert(pane.id, (display_index, tab.name.clone()));
+                        .insert(pane.id, (tab.position, tab.name.clone()));
 
                     eprintln!(
-                        "[tab-status] Mapped pane {} -> tab {} '{}'",
-                        pane.id, display_index, tab.name
+                        "[tab-status] Mapped pane {} -> tab position {} (display {}) '{}'",
+                        pane.id, tab.position, display_index, tab.name
                     );
                 }
             }
