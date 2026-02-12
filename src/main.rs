@@ -222,19 +222,31 @@ impl State {
         false
     }
 
+    /// Check if a grapheme looks like an emoji (non-ASCII, non-letter).
+    /// This filters out regular letters like "A" while allowing emoji like "🤖".
+    fn is_emoji_like(grapheme: &str) -> bool {
+        let first_char = grapheme.chars().next().unwrap_or(' ');
+        // Emoji are outside ASCII range and not regular Unicode letters
+        !first_char.is_ascii() && !first_char.is_alphabetic()
+    }
+
     /// Extract base name from tab name.
-    /// Status is the first grapheme cluster followed by a space.
+    /// Status is the first grapheme cluster (if emoji-like) followed by a space.
     /// Handles complex emoji like flags (🇺🇸) and skin tones (👋🏻).
     /// "🤖 Working" -> "Working"
     /// "🇺🇸 USA" -> "USA"
     /// "Working" -> "Working"
+    /// "A Tab" -> "A Tab" (letter is not treated as status)
     fn extract_base_name(name: &str) -> &str {
         let mut graphemes = name.graphemes(true);
-        if let Some(_first_grapheme) = graphemes.next() {
-            let rest = graphemes.as_str();
-            if let Some(stripped) = rest.strip_prefix(' ') {
-                // First grapheme + space = status prefix, return the rest without leading space
-                return stripped;
+        if let Some(first_grapheme) = graphemes.next() {
+            // Only treat as status if first grapheme looks like an emoji
+            if Self::is_emoji_like(first_grapheme) {
+                let rest = graphemes.as_str();
+                if let Some(stripped) = rest.strip_prefix(' ') {
+                    // First grapheme + space = status prefix, return the rest without leading space
+                    return stripped;
+                }
             }
         }
         // No status prefix, return as is
@@ -242,18 +254,22 @@ impl State {
     }
 
     /// Extract status emoji from tab name.
-    /// Status is the first grapheme cluster if followed by a space.
+    /// Status is the first grapheme cluster (if emoji-like) followed by a space.
     /// Handles complex emoji like flags (🇺🇸) and skin tones (👋🏻).
     /// "🤖 Working" -> "🤖"
     /// "🇺🇸 USA" -> "🇺🇸"
     /// "Working" -> ""
+    /// "A Tab" -> "" (letter is not treated as status)
     fn extract_status(name: &str) -> &str {
         let mut graphemes = name.graphemes(true);
         if let Some(first_grapheme) = graphemes.next() {
-            let rest = graphemes.as_str();
-            if rest.starts_with(' ') {
-                // First grapheme + space = status prefix
-                return first_grapheme;
+            // Only treat as status if first grapheme looks like an emoji
+            if Self::is_emoji_like(first_grapheme) {
+                let rest = graphemes.as_str();
+                if rest.starts_with(' ') {
+                    // First grapheme + space = status prefix
+                    return first_grapheme;
+                }
             }
         }
         // No status prefix

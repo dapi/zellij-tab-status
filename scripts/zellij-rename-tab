@@ -13,6 +13,14 @@ set -euo pipefail
 # Plugin location
 PLUGIN_PATH="file:$HOME/.config/zellij/plugins/zellij-tab-status.wasm"
 
+# Escape string for JSON (handles backslashes and quotes)
+json_escape() {
+    local str="$1"
+    str="${str//\\/\\\\}"
+    str="${str//\"/\\\"}"
+    printf '%s' "$str"
+}
+
 show_help() {
     cat <<'EOF'
 zellij-rename-tab - Rename current zellij tab
@@ -62,9 +70,13 @@ if [[ -z "${ZELLIJ_PANE_ID:-}" ]]; then
     exit 1
 fi
 
+# Escape values for JSON
+pane_escaped=$(json_escape "$ZELLIJ_PANE_ID")
+title_escaped=$(json_escape "$TITLE")
+
 # --plugin flag auto-launches the plugin if not already running
 # Timeout prevents hanging if plugin is unresponsive
-if ! timeout 3s zellij pipe --plugin "$PLUGIN_PATH" --name tab-rename -- "{\"pane_id\": \"$ZELLIJ_PANE_ID\", \"name\": \"$TITLE\"}"; then
+if ! timeout 3s zellij pipe --plugin "$PLUGIN_PATH" --name tab-rename -- "{\"pane_id\": \"$pane_escaped\", \"name\": \"$title_escaped\"}"; then
     echo "Error: zellij pipe timeout or failed" >&2
     exit 1
 fi

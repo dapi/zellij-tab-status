@@ -43,6 +43,14 @@ EOF
 # Plugin location
 PLUGIN_PATH="file:$HOME/.config/zellij/plugins/zellij-tab-status.wasm"
 
+# Escape string for JSON (handles backslashes and quotes)
+json_escape() {
+    local str="$1"
+    str="${str//\\/\\\\}"
+    str="${str//\"/\\\"}"
+    printf '%s' "$str"
+}
+
 # Send command to plugin via pipe
 send_to_plugin() {
     local action="$1"
@@ -53,11 +61,15 @@ send_to_plugin() {
         exit 1
     fi
 
-    local payload
+    local pane_escaped action_escaped emoji_escaped payload
+    pane_escaped=$(json_escape "$ZELLIJ_PANE_ID")
+    action_escaped=$(json_escape "$action")
+
     if [[ -n "$emoji" ]]; then
-        payload="{\"pane_id\": \"$ZELLIJ_PANE_ID\", \"action\": \"$action\", \"emoji\": \"$emoji\"}"
+        emoji_escaped=$(json_escape "$emoji")
+        payload="{\"pane_id\": \"$pane_escaped\", \"action\": \"$action_escaped\", \"emoji\": \"$emoji_escaped\"}"
     else
-        payload="{\"pane_id\": \"$ZELLIJ_PANE_ID\", \"action\": \"$action\"}"
+        payload="{\"pane_id\": \"$pane_escaped\", \"action\": \"$action_escaped\"}"
     fi
 
     # --plugin flag auto-launches the plugin if not already running
