@@ -88,41 +88,39 @@ zellij pipe --name tab-rename -- '{"pane_id": "'$ZELLIJ_PANE_ID'", "name": "New 
 | Testing | 🧪 | Running tests |
 | Deploying | 🚀 | Deployment in progress |
 
-## Bash Wrapper Functions
+## CLI Scripts
 
-Add to your `~/.bashrc` or `~/.zshrc`:
+Ready-to-use wrapper scripts are included in `scripts/`:
+
+### Install scripts
 
 ```bash
-# Set tab status emoji
-tab-status() {
-    local emoji="$1"
-    if [[ -z "$emoji" ]]; then
-        # Get current status
-        zellij pipe --name tab-status -- '{"pane_id": "'$ZELLIJ_PANE_ID'", "action": "get_status"}'
-    else
-        zellij pipe --name tab-status -- '{"pane_id": "'$ZELLIJ_PANE_ID'", "action": "set_status", "emoji": "'"$emoji"'"}'
-    fi
-}
-
-# Clear tab status
-tab-status-clear() {
-    zellij pipe --name tab-status -- '{"pane_id": "'$ZELLIJ_PANE_ID'", "action": "clear_status"}'
-}
-
-# Get tab base name
-tab-name() {
-    zellij pipe --name tab-status -- '{"pane_id": "'$ZELLIJ_PANE_ID'", "action": "get_name"}'
-}
+# Copy to ~/.local/bin (or anywhere in PATH)
+cp scripts/zellij-tab-status ~/.local/bin/
+cp scripts/zellij-rename-tab ~/.local/bin/
+chmod +x ~/.local/bin/zellij-tab-status ~/.local/bin/zellij-rename-tab
 ```
 
-Usage:
+### Usage
 
 ```bash
-tab-status 🤖        # Set working status
-tab-status ✅        # Set success status
-tab-status-clear     # Remove status
-tab-status           # Get current emoji
-tab-name             # Get base name
+zellij-tab-status 🤖           # Set status emoji
+zellij-tab-status ⏳           # Change status
+zellij-tab-status --clear      # Remove status
+zellij-tab-status              # Get current emoji
+zellij-tab-status --name       # Get base name
+
+zellij-rename-tab "New Name"   # Rename tab completely
+```
+
+### Shell aliases (optional)
+
+Add to `~/.bashrc` or `~/.zshrc`:
+
+```bash
+alias ts='zellij-tab-status'
+alias tsc='zellij-tab-status --clear'
+alias tsn='zellij-tab-status --name'
 ```
 
 ## Integration Examples
