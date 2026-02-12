@@ -60,8 +60,10 @@ impl ZellijPlugin for State {
     }
 
     fn pipe(&mut self, pipe_message: PipeMessage) -> bool {
-        eprintln!("[tab-status] Pipe: name={}, payload={:?}",
-            pipe_message.name, pipe_message.payload);
+        eprintln!(
+            "[tab-status] Pipe: name={}, payload={:?}",
+            pipe_message.name, pipe_message.payload
+        );
 
         match pipe_message.name.as_str() {
             "tab-rename" => self.handle_rename(&pipe_message.payload),
@@ -90,8 +92,12 @@ impl State {
         match self.pane_to_tab.get(&pane_id) {
             Some(&(tab_position, ref name)) => Some((tab_position, name)),
             None => {
-                eprintln!("[{}] ERROR: pane {} not found. Known panes: {:?}",
-                    context, pane_id, self.pane_to_tab.keys().collect::<Vec<_>>());
+                eprintln!(
+                    "[{}] ERROR: pane {} not found. Known panes: {:?}",
+                    context,
+                    pane_id,
+                    self.pane_to_tab.keys().collect::<Vec<_>>()
+                );
                 None
             }
         }
@@ -122,8 +128,11 @@ impl State {
             return false;
         };
 
-        eprintln!("[tab-status] Looking for pane_id={} in {} mappings",
-            pane_id, self.pane_to_tab.len());
+        eprintln!(
+            "[tab-status] Looking for pane_id={} in {} mappings",
+            pane_id,
+            self.pane_to_tab.len()
+        );
 
         let Some((tab_position, _)) = self.get_tab_info(pane_id, "tab-rename") else {
             return false;
@@ -132,8 +141,10 @@ impl State {
         // tab_id for rename_tab is 1-indexed position
         let tab_id = (tab_position + 1) as u32;
 
-        eprintln!("[tab-status] Renaming tab {} (position {}) to '{}'",
-            tab_id, tab_position, rename.name);
+        eprintln!(
+            "[tab-status] Renaming tab {} (position {}) to '{}'",
+            tab_id, tab_position, rename.name
+        );
 
         rename_tab(tab_id, rename.name.clone());
         self.update_cached_name(pane_id, rename.name);
@@ -174,15 +185,19 @@ impl State {
                     return false;
                 }
                 let new_name = format!("{} {}", status.emoji, base_name);
-                eprintln!("[tab-status] set_status on tab {} (position {}): '{}' -> '{}'",
-                    tab_id, tab_position, current_name, new_name);
+                eprintln!(
+                    "[tab-status] set_status on tab {} (position {}): '{}' -> '{}'",
+                    tab_id, tab_position, current_name, new_name
+                );
                 rename_tab(tab_id, new_name.clone());
                 self.update_cached_name(pane_id, new_name);
             }
             "clear_status" => {
                 let new_name = base_name.to_string();
-                eprintln!("[tab-status] clear_status on tab {} (position {}): '{}' -> '{}'",
-                    tab_id, tab_position, current_name, new_name);
+                eprintln!(
+                    "[tab-status] clear_status on tab {} (position {}): '{}' -> '{}'",
+                    tab_id, tab_position, current_name, new_name
+                );
                 rename_tab(tab_id, new_name.clone());
                 self.update_cached_name(pane_id, new_name);
             }
@@ -255,13 +270,13 @@ impl State {
                         continue;
                     }
 
-                    self.pane_to_tab.insert(
-                        pane.id,
-                        (display_index, tab.name.clone())
-                    );
+                    self.pane_to_tab
+                        .insert(pane.id, (display_index, tab.name.clone()));
 
-                    eprintln!("[tab-status] Mapped pane {} -> tab {} '{}'",
-                        pane.id, display_index, tab.name);
+                    eprintln!(
+                        "[tab-status] Mapped pane {} -> tab {} '{}'",
+                        pane.id, display_index, tab.name
+                    );
                 }
             }
         }
