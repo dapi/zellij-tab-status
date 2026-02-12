@@ -1,0 +1,101 @@
+# CLAUDE.md
+
+## Project Overview
+
+**zellij-tab-status** — Rust WASM plugin for Zellij terminal multiplexer. Manages tab status with emoji prefixes.
+
+## Tech Stack
+
+- **Language:** Rust
+- **Target:** `wasm32-wasip1` (WebAssembly)
+- **Framework:** `zellij-tile` 0.43.1
+- **Dependencies:** serde, serde_json, unicode-segmentation
+
+## Build Commands
+
+```bash
+# Build WASM plugin
+make build
+
+# Install to ~/.config/zellij/plugins/
+make install
+
+# Clean build artifacts
+make clean
+
+# Test rename functionality
+make test
+```
+
+## Project Structure
+
+```
+zellij-tab-status/
+├── Cargo.toml          # Package config, dependencies
+├── Cargo.lock          # Locked versions
+├── Makefile            # Build/install targets
+├── README.md           # User documentation
+├── src/
+│   └── main.rs         # Plugin implementation
+└── test-plugin.sh      # Manual testing script
+```
+
+## Architecture
+
+### Zellij Plugin API
+
+Plugin uses `zellij-tile` crate:
+- `register_plugin!(State)` — registers plugin state
+- `ZellijPlugin` trait — lifecycle hooks (load, update, pipe, render)
+- `Event::TabUpdate`, `Event::PaneUpdate` — track tab/pane state
+- `PipeMessage` — receive commands from CLI
+
+### Pipe Commands
+
+**tab-rename** (legacy):
+```json
+{"pane_id": "123", "name": "New Tab Name"}
+```
+
+**tab-status** (recommended):
+```json
+{"pane_id": "123", "action": "set_status", "emoji": "🤖"}
+{"pane_id": "123", "action": "clear_status"}
+{"pane_id": "123", "action": "get_status"}
+{"pane_id": "123", "action": "get_name"}
+```
+
+### State Management
+
+- `pane_to_tab: BTreeMap<u32, (usize, String)>` — maps pane_id to (tab_position, tab_name)
+- Rebuilt on every `TabUpdate` or `PaneUpdate` event
+- Tab position is 0-indexed internally, 1-indexed for `rename_tab()` API
+
+### Unicode Handling
+
+Uses `unicode-segmentation` for proper emoji handling:
+- Flag emoji: 🇺🇸 (2 code points, 1 grapheme)
+- Skin tones: 👋🏻 (2 code points, 1 grapheme)
+- Status = first grapheme + space
+
+## Code Conventions
+
+- Log prefix: `[tab-status]` for all eprintln! calls
+- Error handling: return `false` from handlers on error
+- No panics — all errors logged and gracefully handled
+
+## Testing
+
+```bash
+# In Zellij session:
+./test-plugin.sh
+
+# Check logs:
+tail -f /tmp/zellij-1000/zellij-log/zellij.log | grep tab-status
+```
+
+## Related Projects
+
+- **zellij-tab-claude-status** — Claude Code plugin that uses this Zellij plugin
+  - Repository: github.com/dapi/claude-code-marketplace
+  - Uses `tab-status` pipe for session state indicators

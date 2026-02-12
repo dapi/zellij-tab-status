@@ -1,0 +1,18 @@
+[package]
+name = "zellij-tab-status"
+version = "0.1.0"
+edition = "2021"
+authors = ["Danil Pismenny <danilpismenny@gmail.com>"]
+description = "Zellij plugin for managing tab status with emoji prefixes"
+license = "MIT"
+repository = "https://github.com/dapi/zellij-tab-status"
+
+[dependencies]
+zellij-tile = "0.43.1"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+unicode-segmentation = "1.10"
+
+[profile.release]
+opt-level = "s"
+lto = true
