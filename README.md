@@ -13,16 +13,25 @@ Zellij plugin for managing tab status with emoji prefixes.
 
 ## Installation
 
-### Prerequisites
+### Option 1: Download Release (Recommended)
 
 ```bash
-# Install Rust wasm target
-rustup target add wasm32-wasip1
+# Download latest release
+curl -L https://github.com/dapi/zellij-tab-status/releases/latest/download/zellij_tab_status.wasm \
+  -o ~/.config/zellij/plugins/zellij-tab-status.wasm
+
+# Or specific version
+curl -L https://github.com/dapi/zellij-tab-status/releases/download/v0.1.0/zellij_tab_status.wasm \
+  -o ~/.config/zellij/plugins/zellij-tab-status.wasm
 ```
 
-### Build & Install
+### Option 2: Build from Source
 
 ```bash
+# Prerequisites
+rustup target add wasm32-wasip1
+
+# Build & Install
 git clone https://github.com/dapi/zellij-tab-status
 cd zellij-tab-status
 make install
