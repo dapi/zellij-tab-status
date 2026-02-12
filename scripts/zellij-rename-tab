@@ -63,4 +63,8 @@ if [[ -z "${ZELLIJ_PANE_ID:-}" ]]; then
 fi
 
 # --plugin flag auto-launches the plugin if not already running
-zellij pipe --plugin "$PLUGIN_PATH" --name tab-rename -- "{\"pane_id\": \"$ZELLIJ_PANE_ID\", \"name\": \"$TITLE\"}"
+# Timeout prevents hanging if plugin is unresponsive
+if ! timeout 3s zellij pipe --plugin "$PLUGIN_PATH" --name tab-rename -- "{\"pane_id\": \"$ZELLIJ_PANE_ID\", \"name\": \"$TITLE\"}"; then
+    echo "Error: zellij pipe timeout or failed" >&2
+    exit 1
+fi
