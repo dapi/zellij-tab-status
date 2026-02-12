@@ -1,8 +1,9 @@
-.PHONY: build install clean
+.PHONY: build install install-scripts clean
 
 PLUGIN_NAME = zellij-tab-status
 TARGET = target/wasm32-wasip1/release/zellij-tab-status.wasm
 INSTALL_DIR = $(HOME)/.config/zellij/plugins
+SCRIPTS_DIR = $(HOME)/.local/bin
 
 build:
 	cargo build --release --target wasm32-wasip1
@@ -16,6 +17,12 @@ install: build
 	@echo '  load_plugins {'
 	@echo '      "file:$(INSTALL_DIR)/$(PLUGIN_NAME).wasm"'
 	@echo '  }'
+
+install-scripts:
+	mkdir -p $(SCRIPTS_DIR)
+	cp scripts/* $(SCRIPTS_DIR)/
+	@echo "Installed scripts to $(SCRIPTS_DIR)/"
+	@ls -1 scripts/ | sed 's/^/  /'
 
 clean:
 	cargo clean
