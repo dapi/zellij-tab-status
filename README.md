@@ -1,5 +1,7 @@
 # zellij-tab-status
 
+[![CI](https://github.com/dapi/zellij-tab-status/actions/workflows/ci.yml/badge.svg)](https://github.com/dapi/zellij-tab-status/actions/workflows/ci.yml)
+
 Zellij plugin for managing tab status with emoji prefixes.
 
 ## Features
