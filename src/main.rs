@@ -231,9 +231,9 @@ impl State {
         let mut graphemes = name.graphemes(true);
         if let Some(_first_grapheme) = graphemes.next() {
             let rest = graphemes.as_str();
-            if rest.starts_with(' ') {
+            if let Some(stripped) = rest.strip_prefix(' ') {
                 // First grapheme + space = status prefix, return the rest without leading space
-                return &rest[1..];
+                return stripped;
             }
         }
         // No status prefix, return as is
