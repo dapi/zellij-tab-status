@@ -39,15 +39,9 @@ make install
 
 ### Configure Zellij
 
-Add to `~/.config/zellij/config.kdl`:
+`make install` automatically configures `~/.config/zellij/config.kdl`.
 
-```kdl
-load_plugins {
-    "file:~/.config/zellij/plugins/zellij-tab-status.wasm"
-}
-```
-
-Restart Zellij session.
+Restart Zellij session to load the plugin.
 
 ## Usage
 
@@ -247,6 +241,18 @@ Plugin uses grapheme clustering. If emoji appears broken:
 - Ensure terminal supports Unicode
 - Check font has emoji glyphs
 - Try simpler emoji (🟢 instead of 👨‍👩‍👧)
+
+### Auto-Config Failed
+
+If automatic configuration fails during `make install`:
+1. Check backup: `~/.config/zellij/config.kdl.bak`
+2. Manually add to `~/.config/zellij/config.kdl`:
+   ```kdl
+   load_plugins {
+       "file:~/.config/zellij/plugins/zellij-tab-status.wasm"
+   }
+   ```
+3. Report issue: https://github.com/dapi/zellij-tab-status/issues
 
 ## Development
 

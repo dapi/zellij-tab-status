@@ -35,10 +35,13 @@ All operations are atomic (via plugin) - no race conditions.
 
 Requirements:
   - Must be run inside a zellij session
-  - Requires zellij-tab-status plugin installed and loaded
+  - Requires zellij-tab-status plugin installed (auto-launches if needed)
   - Uses $ZELLIJ_PANE_ID from environment automatically
 EOF
 }
+
+# Plugin location
+PLUGIN_PATH="file:$HOME/.config/zellij/plugins/zellij-tab-status.wasm"
 
 # Send command to plugin via pipe
 send_to_plugin() {
@@ -57,7 +60,8 @@ send_to_plugin() {
         payload="{\"pane_id\": \"$ZELLIJ_PANE_ID\", \"action\": \"$action\"}"
     fi
 
-    zellij pipe --name tab-status -- "$payload"
+    # --plugin flag auto-launches the plugin if not already running
+    zellij pipe --plugin "$PLUGIN_PATH" --name tab-status -- "$payload"
 }
 
 # Exit early if not in zellij
@@ -65,6 +69,14 @@ check_zellij() {
     if [[ -z "${ZELLIJ:-}" ]]; then
         echo "Warning: Not in zellij session" >&2
         exit 0
+    fi
+
+    # Check plugin is installed
+    local wasm_path="$HOME/.config/zellij/plugins/zellij-tab-status.wasm"
+    if [[ ! -f "$wasm_path" ]]; then
+        echo "Error: Plugin not installed at $wasm_path" >&2
+        echo "Run: make install (from zellij-tab-status directory)" >&2
+        exit 1
     fi
 }
 

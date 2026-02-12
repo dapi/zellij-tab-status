@@ -1,4 +1,4 @@
-.PHONY: build install install-scripts clean
+.PHONY: build install install-scripts configure-zellij clean
 
 PLUGIN_NAME = zellij-tab-status
 TARGET = target/wasm32-wasip1/release/zellij-tab-status.wasm
@@ -8,7 +8,7 @@ SCRIPTS_DIR = $(HOME)/.local/bin
 build:
 	cargo build --release --target wasm32-wasip1
 
-install: build install-scripts
+install: build install-scripts configure-zellij
 	mkdir -p $(INSTALL_DIR)
 	cp $(TARGET) $(INSTALL_DIR)/$(PLUGIN_NAME).wasm
 	@echo ""
@@ -16,16 +16,15 @@ install: build install-scripts
 	@echo "   • Plugin: $(INSTALL_DIR)/$(PLUGIN_NAME).wasm"
 	@echo "   • Scripts: $(SCRIPTS_DIR)/zellij-tab-status, $(SCRIPTS_DIR)/zellij-rename-tab"
 	@echo ""
-	@echo "📝 Add to ~/.config/zellij/config.kdl:"
-	@echo '  load_plugins {'
-	@echo '      "file:$(INSTALL_DIR)/$(PLUGIN_NAME).wasm"'
-	@echo '  }'
+	@echo "🔄 Restart zellij session to load the plugin."
+
+configure-zellij:
+	@./scripts/configure-zellij.sh || echo "⚠️  Auto-config failed. Add plugin to config.kdl manually."
 
 install-scripts:
 	mkdir -p $(SCRIPTS_DIR)
-	cp scripts/* $(SCRIPTS_DIR)/
+	cp scripts/zellij-tab-status scripts/zellij-rename-tab $(SCRIPTS_DIR)/
 	@echo "Installed scripts to $(SCRIPTS_DIR)/"
-	@ls -1 scripts/ | sed 's/^/  /'
 
 clean:
 	cargo clean
