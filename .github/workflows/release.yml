@@ -35,4 +35,4 @@ jobs:
           name: ${{ steps.version.outputs.version }}
           generate_release_notes: true
           files: |
-            target/wasm32-wasip1/release/zellij_tab_status.wasm
+            target/wasm32-wasip1/release/zellij-tab-status.wasm

@@ -48,4 +48,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: zellij-tab-status.wasm
-          path: target/wasm32-wasip1/release/zellij_tab_status.wasm
+          path: target/wasm32-wasip1/release/zellij-tab-status.wasm
