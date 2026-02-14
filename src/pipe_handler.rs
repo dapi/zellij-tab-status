@@ -31,8 +31,8 @@ pub type PaneTabMap = BTreeMap<u32, (usize, String)>;
 fn parse_pane_id(pane_id_str: &str, context: &str) -> Option<u32> {
     match pane_id_str.parse() {
         Ok(id) => Some(id),
-        Err(_) => {
-            eprintln!("[{}] ERROR: pane_id must be a number", context);
+        Err(e) => {
+            eprintln!("[{}] ERROR: pane_id must be a number, got '{}': {}", context, pane_id_str, e);
             None
         }
     }
