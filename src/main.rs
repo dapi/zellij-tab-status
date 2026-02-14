@@ -52,8 +52,14 @@ impl ZellijPlugin for State {
         );
 
         let effects = match pipe_message.name.as_str() {
-            "tab-rename" => pipe_handler::handle_rename(&mut self.pane_to_tab, &pipe_message.payload),
-            "tab-status" => pipe_handler::handle_status(&mut self.pane_to_tab, &pipe_message.payload),
+            "tab-rename" => {
+                pipe_handler::handle_rename(&mut self.pane_to_tab, &pipe_message.payload)
+            }
+            "tab-status" => pipe_handler::handle_status(
+                &mut self.pane_to_tab,
+                &pipe_message.payload,
+                &pipe_message.name,
+            ),
             _ => {
                 eprintln!(
                     "[tab-status] WARNING: unknown pipe name '{}', ignoring",
