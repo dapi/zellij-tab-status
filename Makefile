@@ -14,7 +14,7 @@ install: build install-scripts configure-zellij
 	@echo ""
 	@echo "✅ Installed:"
 	@echo "   • Plugin: $(INSTALL_DIR)/$(PLUGIN_NAME).wasm"
-	@echo "   • Scripts: $(SCRIPTS_DIR)/zellij-tab-status, $(SCRIPTS_DIR)/zellij-rename-tab"
+	@echo "   • Script: $(SCRIPTS_DIR)/zellij-tab-status"
 	@echo ""
 	@echo "🔄 Restart zellij session to load the plugin."
 
@@ -23,7 +23,7 @@ configure-zellij:
 
 install-scripts:
 	mkdir -p $(SCRIPTS_DIR)
-	cp scripts/zellij-tab-status scripts/zellij-rename-tab $(SCRIPTS_DIR)/
+	cp scripts/zellij-tab-status $(SCRIPTS_DIR)/
 	@echo "Installed scripts to $(SCRIPTS_DIR)/"
 
 clean:
@@ -35,6 +35,6 @@ test:
 
 # Test in live Zellij session (run after installing and restarting zellij)
 test-live:
-	zellij pipe --name tab-rename -- '{"pane_id": "$(ZELLIJ_PANE_ID)", "name": "Test-Rename"}' < /dev/null
+	zellij pipe --plugin "file:$(INSTALL_DIR)/$(PLUGIN_NAME).wasm" --name tab-status -- '{"pane_id": "$(ZELLIJ_PANE_ID)", "action": "set_status", "emoji": "🧪"}' < /dev/null
 	sleep 0.5
 	zellij action query-tab-names
