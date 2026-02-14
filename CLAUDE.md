@@ -23,21 +23,29 @@ make install
 # Clean build artifacts
 make clean
 
-# Test rename functionality
+# Run unit tests (no WASM runtime needed)
 make test
+
+# Test in live Zellij session
+make test-live
 ```
 
 ## Project Structure
 
 ```
 zellij-tab-status/
-├── Cargo.toml          # Package config, dependencies
-├── Cargo.lock          # Locked versions
-├── Makefile            # Build/install targets
-├── README.md           # User documentation
+├── Cargo.toml            # Package config, dependencies
+├── Cargo.lock            # Locked versions
+├── Makefile              # Build/install targets
+├── README.md             # User documentation
 ├── src/
-│   └── main.rs         # Plugin implementation
-└── test-plugin.sh      # Manual testing script
+│   ├── main.rs           # Plugin entry point (Zellij API calls)
+│   ├── lib.rs            # Library root (module exports)
+│   ├── pipe_handler.rs   # Pipe command handlers (pure logic + tests)
+│   └── status_utils.rs   # Unicode emoji/status extraction (+ tests)
+└── scripts/
+    ├── zellij-tab-status   # CLI: manage tab status emoji
+    └── zellij-rename-tab   # CLI: rename tab
 ```
 
 ## Architecture
@@ -67,9 +75,9 @@ Plugin uses `zellij-tile` crate:
 
 ### State Management
 
-- `pane_to_tab: BTreeMap<u32, (usize, String)>` — maps pane_id to (tab_position, tab_name)
+- `pane_to_tab: PaneTabMap` (alias for `BTreeMap<u32, (usize, String)>`) — maps pane_id to (tab_position, tab_name)
 - Rebuilt on every `TabUpdate` or `PaneUpdate` event
-- Tab position is 0-indexed internally, 1-indexed for `rename_tab()` API
+- Tab position is 0-indexed internally (from `TabInfo.position`), converted to 1-indexed `tab_id` in `pipe_handler.rs` for the `rename_tab()` API
 
 ### Unicode Handling
 
@@ -81,14 +89,19 @@ Uses `unicode-segmentation` for proper emoji handling:
 ## Code Conventions
 
 - Log prefix: `[tab-status]` for all eprintln! calls
-- Error handling: return `false` from handlers on error
+- Error handling: handlers return `Vec<PipeEffect>` (empty on error), main.rs executes effects
+- "Functional core, imperative shell": pure handlers in `pipe_handler.rs`, side effects in `main.rs`
+- `unblock_cli_pipe_input()` always called after pipe handling to prevent CLI hang
 - No panics — all errors logged and gracefully handled
 
 ## Testing
 
 ```bash
-# In Zellij session:
-./test-plugin.sh
+# Unit tests (pipe_handler + status_utils, no WASM runtime needed):
+cargo test --lib
+
+# In Zellij session (after make install + restart):
+make test-live
 
 # Check logs:
 tail -f /tmp/zellij-1000/zellij-log/zellij.log | grep tab-status

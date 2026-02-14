@@ -76,7 +76,7 @@ title_escaped=$(json_escape "$TITLE")
 
 # --plugin flag auto-launches the plugin if not already running
 # Timeout prevents hanging if plugin is unresponsive
-if ! timeout 3s zellij pipe --plugin "$PLUGIN_PATH" --name tab-rename -- "{\"pane_id\": \"$pane_escaped\", \"name\": \"$title_escaped\"}"; then
+if ! timeout 3s zellij pipe --plugin "$PLUGIN_PATH" --name tab-rename -- "{\"pane_id\": \"$pane_escaped\", \"name\": \"$title_escaped\"}" < /dev/null; then
     echo "Error: zellij pipe timeout or failed" >&2
     exit 1
 fi

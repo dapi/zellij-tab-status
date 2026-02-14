@@ -1,4 +1,4 @@
-.PHONY: build install install-scripts configure-zellij clean
+.PHONY: build install install-scripts configure-zellij clean test test-live
 
 PLUGIN_NAME = zellij-tab-status
 TARGET = target/wasm32-wasip1/release/zellij-tab-status.wasm
@@ -29,8 +29,12 @@ install-scripts:
 clean:
 	cargo clean
 
-# Test rename (run after installing and restarting zellij)
+# Run unit tests (library only, no WASM runtime needed)
 test:
-	zellij pipe --name tab-rename -- '{"pane_id": "$(ZELLIJ_PANE_ID)", "name": "Test-Rename"}'
+	cargo test --lib
+
+# Test in live Zellij session (run after installing and restarting zellij)
+test-live:
+	zellij pipe --name tab-rename -- '{"pane_id": "$(ZELLIJ_PANE_ID)", "name": "Test-Rename"}' < /dev/null
 	sleep 0.5
 	zellij action query-tab-names

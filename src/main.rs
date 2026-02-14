@@ -1,27 +1,12 @@
-use serde::Deserialize;
 use std::collections::BTreeMap;
 use zellij_tile::prelude::*;
 
-use zellij_tab_status::status_utils::{extract_base_name, extract_status};
-
-#[derive(Debug, Deserialize)]
-struct RenamePayload {
-    pane_id: String,
-    name: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct StatusPayload {
-    pane_id: String,
-    action: String,
-    #[serde(default)]
-    emoji: String,
-}
+use zellij_tab_status::pipe_handler::{self, PaneTabMap, PipeEffect};
 
 #[derive(Default)]
 struct State {
     /// Maps pane_id -> (tab_position, tab_name)
-    pane_to_tab: BTreeMap<u32, (usize, String)>,
+    pane_to_tab: PaneTabMap,
 
     /// Current tabs info
     tabs: Vec<TabInfo>,
@@ -66,163 +51,43 @@ impl ZellijPlugin for State {
             pipe_message.name, pipe_message.payload
         );
 
-        match pipe_message.name.as_str() {
-            "tab-rename" => self.handle_rename(&pipe_message.payload),
-            "tab-status" => self.handle_status(&pipe_message.payload),
-            _ => false,
+        let effects = match pipe_message.name.as_str() {
+            "tab-rename" => {
+                pipe_handler::handle_rename(&mut self.pane_to_tab, &pipe_message.payload)
+            }
+            "tab-status" => pipe_handler::handle_status(
+                &mut self.pane_to_tab,
+                &pipe_message.payload,
+                &pipe_message.name,
+            ),
+            _ => {
+                eprintln!(
+                    "[tab-status] WARNING: unknown pipe name '{}', ignoring",
+                    pipe_message.name
+                );
+                vec![]
+            }
+        };
+
+        for effect in effects {
+            match effect {
+                PipeEffect::RenameTab { tab_id, name } => rename_tab(tab_id, name),
+                PipeEffect::PipeOutput { pipe_name, output } => {
+                    cli_pipe_output(&pipe_name, &output);
+                }
+            }
         }
+
+        // Always unblock CLI pipe to prevent `zellij pipe` from hanging
+        unblock_cli_pipe_input(&pipe_message.name);
+
+        false
     }
 
     fn render(&mut self, _rows: usize, _cols: usize) {}
 }
 
 impl State {
-    /// Parse pane_id from string, returning None on error
-    fn parse_pane_id(pane_id_str: &str, context: &str) -> Option<u32> {
-        match pane_id_str.parse() {
-            Ok(id) => Some(id),
-            Err(_) => {
-                eprintln!("[{}] ERROR: pane_id must be a number", context);
-                None
-            }
-        }
-    }
-
-    /// Get tab info for pane, returning None if not found
-    fn get_tab_info(&self, pane_id: u32, context: &str) -> Option<(usize, &String)> {
-        match self.pane_to_tab.get(&pane_id) {
-            Some(&(tab_position, ref name)) => Some((tab_position, name)),
-            None => {
-                eprintln!(
-                    "[{}] ERROR: pane {} not found. Known panes: {:?}",
-                    context,
-                    pane_id,
-                    self.pane_to_tab.keys().collect::<Vec<_>>()
-                );
-                None
-            }
-        }
-    }
-
-    /// Update cached tab name after rename
-    fn update_cached_name(&mut self, pane_id: u32, new_name: String) {
-        if let Some((_, ref mut cached_name)) = self.pane_to_tab.get_mut(&pane_id) {
-            *cached_name = new_name;
-        }
-    }
-
-    fn handle_rename(&mut self, payload: &Option<String>) -> bool {
-        let Some(payload) = payload else {
-            eprintln!("[tab-status] ERROR: missing payload");
-            return false;
-        };
-
-        let rename: RenamePayload = match serde_json::from_str(payload) {
-            Ok(p) => p,
-            Err(e) => {
-                eprintln!("[tab-status] ERROR: invalid JSON: {}", e);
-                return false;
-            }
-        };
-
-        let Some(pane_id) = Self::parse_pane_id(&rename.pane_id, "tab-rename") else {
-            return false;
-        };
-
-        eprintln!(
-            "[tab-status] Looking for pane_id={} in {} mappings",
-            pane_id,
-            self.pane_to_tab.len()
-        );
-
-        let Some((tab_position, _)) = self.get_tab_info(pane_id, "tab-rename") else {
-            return false;
-        };
-
-        // rename_tab uses 1-indexed position
-        let tab_id = (tab_position + 1) as u32;
-
-        eprintln!(
-            "[tab-status] Renaming tab {} (position {}) to '{}'",
-            tab_id, tab_position, rename.name
-        );
-
-        rename_tab(tab_id, rename.name.clone());
-        self.update_cached_name(pane_id, rename.name);
-
-        false
-    }
-
-    fn handle_status(&mut self, payload: &Option<String>) -> bool {
-        let Some(payload) = payload else {
-            eprintln!("[tab-status] ERROR: missing payload");
-            return false;
-        };
-
-        let status: StatusPayload = match serde_json::from_str(payload) {
-            Ok(p) => p,
-            Err(e) => {
-                eprintln!("[tab-status] ERROR: invalid JSON: {}", e);
-                return false;
-            }
-        };
-
-        let Some(pane_id) = Self::parse_pane_id(&status.pane_id, "tab-status") else {
-            return false;
-        };
-
-        let Some((tab_position, current_name)) = self.get_tab_info(pane_id, "tab-status") else {
-            return false;
-        };
-        let current_name = current_name.clone(); // Clone to release borrow
-
-        let base_name = extract_base_name(&current_name);
-        // rename_tab uses 1-indexed position
-        let tab_id = (tab_position + 1) as u32;
-
-        match status.action.as_str() {
-            "set_status" => {
-                if status.emoji.is_empty() {
-                    eprintln!("[tab-status] ERROR: emoji is required for 'set_status' action");
-                    return false;
-                }
-                let new_name = format!("{} {}", status.emoji, base_name);
-                eprintln!(
-                    "[tab-status] set_status on tab {} (position {}): '{}' -> '{}'",
-                    tab_id, tab_position, current_name, new_name
-                );
-                rename_tab(tab_id, new_name.clone());
-                self.update_cached_name(pane_id, new_name);
-            }
-            "clear_status" => {
-                let new_name = base_name.to_string();
-                eprintln!(
-                    "[tab-status] clear_status on tab {} (position {}): '{}' -> '{}'",
-                    tab_id, tab_position, current_name, new_name
-                );
-                rename_tab(tab_id, new_name.clone());
-                self.update_cached_name(pane_id, new_name);
-            }
-            "get_status" => {
-                let emoji = extract_status(&current_name);
-                eprintln!("[tab-status] get_status: '{}'", emoji);
-                cli_pipe_output("tab-status", emoji);
-                unblock_cli_pipe_input("tab-status");
-            }
-            "get_name" => {
-                eprintln!("[tab-status] get_name: '{}'", base_name);
-                cli_pipe_output("tab-status", base_name);
-                unblock_cli_pipe_input("tab-status");
-            }
-            _ => {
-                eprintln!("[tab-status] ERROR: unknown action '{}'. Use 'set_status', 'clear_status', 'get_status', or 'get_name'", status.action);
-                return false;
-            }
-        };
-
-        false
-    }
-
     fn rebuild_mapping(&mut self) {
         self.pane_to_tab.clear();
 
@@ -234,7 +99,7 @@ impl State {
                         continue;
                     }
 
-                    // Use tab.position for rename_tab API, not display_index
+                    // Store tab.position (0-indexed); pipe_handler adds +1 for rename_tab API
                     self.pane_to_tab
                         .insert(pane.id, (tab.position, tab.name.clone()));
 
