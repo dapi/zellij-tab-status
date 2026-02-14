@@ -12,12 +12,6 @@ pub enum PipeEffect {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct RenamePayload {
-    pub pane_id: String,
-    pub name: String,
-}
-
-#[derive(Debug, Deserialize)]
 pub struct StatusPayload {
     pub pane_id: String,
     pub action: String,
@@ -64,50 +58,6 @@ fn update_cached_name(pane_to_tab: &mut PaneTabMap, pane_id: u32, new_name: Stri
     if let Some((_, ref mut cached_name)) = pane_to_tab.get_mut(&pane_id) {
         *cached_name = new_name;
     }
-}
-
-pub fn handle_rename(pane_to_tab: &mut PaneTabMap, payload: &Option<String>) -> Vec<PipeEffect> {
-    let Some(payload) = payload else {
-        eprintln!("[tab-status] ERROR: missing payload");
-        return vec![];
-    };
-
-    let rename: RenamePayload = match serde_json::from_str(payload) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!("[tab-status] ERROR: invalid JSON: {}", e);
-            return vec![];
-        }
-    };
-
-    let Some(pane_id) = parse_pane_id(&rename.pane_id, "tab-rename") else {
-        return vec![];
-    };
-
-    eprintln!(
-        "[tab-status] Looking for pane_id={} in {} mappings",
-        pane_id,
-        pane_to_tab.len()
-    );
-
-    let Some((tab_position, _)) = get_tab_info(pane_to_tab, pane_id, "tab-rename") else {
-        return vec![];
-    };
-
-    let tab_id = (tab_position + 1) as u32;
-
-    eprintln!(
-        "[tab-status] Renaming tab {} (position {}) to '{}'",
-        tab_id, tab_position, rename.name
-    );
-
-    let effects = vec![PipeEffect::RenameTab {
-        tab_id,
-        name: rename.name.clone(),
-    }];
-    update_cached_name(pane_to_tab, pane_id, rename.name);
-
-    effects
 }
 
 pub fn handle_status(
@@ -421,56 +371,6 @@ mod tests {
         assert_eq!(effects, vec![]);
     }
 
-    // ==================== handle_rename ====================
-
-    #[test]
-    fn rename_returns_rename_effect() {
-        let mut map = make_map(&[(1, 0, "Work")]);
-        let effects = handle_rename(&mut map, &payload(r#"{"pane_id":"1","name":"New Name"}"#));
-        assert_eq!(
-            effects,
-            vec![PipeEffect::RenameTab {
-                tab_id: 1,
-                name: "New Name".into()
-            }]
-        );
-    }
-
-    #[test]
-    fn rename_updates_cache() {
-        let mut map = make_map(&[(1, 0, "Work")]);
-        handle_rename(&mut map, &payload(r#"{"pane_id":"1","name":"New Name"}"#));
-        assert_eq!(map.get(&1).unwrap().1, "New Name");
-    }
-
-    #[test]
-    fn rename_missing_payload_returns_no_effects() {
-        let mut map = make_map(&[(1, 0, "Work")]);
-        let effects = handle_rename(&mut map, &None);
-        assert_eq!(effects, vec![]);
-    }
-
-    #[test]
-    fn rename_invalid_json_returns_no_effects() {
-        let mut map = make_map(&[(1, 0, "Work")]);
-        let effects = handle_rename(&mut map, &payload("{bad}"));
-        assert_eq!(effects, vec![]);
-    }
-
-    #[test]
-    fn rename_unknown_pane_returns_no_effects() {
-        let mut map = make_map(&[(1, 0, "Work")]);
-        let effects = handle_rename(&mut map, &payload(r#"{"pane_id":"999","name":"New"}"#));
-        assert_eq!(effects, vec![]);
-    }
-
-    #[test]
-    fn rename_invalid_pane_id_returns_no_effects() {
-        let mut map = make_map(&[(1, 0, "Work")]);
-        let effects = handle_rename(&mut map, &payload(r#"{"pane_id":"abc","name":"New"}"#));
-        assert_eq!(effects, vec![]);
-    }
-
     // ==================== tab_id calculation ====================
 
     #[test]
@@ -486,19 +386,6 @@ mod tests {
             vec![PipeEffect::RenameTab {
                 tab_id: 3, // position 2 + 1
                 name: "🔥 Tab3".into()
-            }]
-        );
-    }
-
-    #[test]
-    fn rename_tab_id_is_one_indexed() {
-        let mut map = make_map(&[(5, 3, "Tab4")]);
-        let effects = handle_rename(&mut map, &payload(r#"{"pane_id":"5","name":"Renamed"}"#));
-        assert_eq!(
-            effects,
-            vec![PipeEffect::RenameTab {
-                tab_id: 4, // position 3 + 1
-                name: "Renamed".into()
             }]
         );
     }
