@@ -8,6 +8,7 @@
 #   zellij-tab-status              # Get current status emoji
 #   zellij-tab-status --name       # Get base name (without status)
 #   zellij-tab-status --set-name X # Set tab name, preserving status emoji
+#   zellij-tab-status --version    # Get plugin version
 #
 # All operations are handled sequentially by the plugin - no client-side race conditions.
 # The status is the first grapheme cluster followed by a space.
@@ -25,6 +26,7 @@ Usage:
   zellij-tab-status --get, -g      Get current status emoji (default if no args)
   zellij-tab-status --name, -n     Get base name (without status)
   zellij-tab-status --set-name, -s Set tab name (preserving status emoji)
+  zellij-tab-status --version, -v  Get installed plugin version
   zellij-tab-status --help, -h     Show this help
 
 Examples:
@@ -126,6 +128,10 @@ case "${1:-}" in
         fi
         check_zellij
         send_to_plugin "set_name" "name" "$2"
+        ;;
+    -v|--version)
+        check_zellij
+        send_to_plugin "get_version"
         ;;
     -*)
         echo "Unknown option: $1" >&2

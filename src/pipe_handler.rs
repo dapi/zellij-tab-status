@@ -139,6 +139,14 @@ pub fn handle_status(
                 output: base_name.to_string(),
             }]
         }
+        "get_version" => {
+            let version = env!("CARGO_PKG_VERSION");
+            eprintln!("[tab-status] get_version: '{}'", version);
+            vec![PipeEffect::PipeOutput {
+                pipe_name: pipe_name.to_string(),
+                output: version.to_string(),
+            }]
+        }
         "set_name" => {
             if status.name.is_empty() {
                 eprintln!("[tab-status] ERROR: name is required for 'set_name' action");
@@ -163,7 +171,7 @@ pub fn handle_status(
         }
         _ => {
             eprintln!(
-                "[tab-status] ERROR: unknown action '{}'. Use 'set_status', 'clear_status', 'get_status', 'get_name', or 'set_name'",
+                "[tab-status] ERROR: unknown action '{}'. Use 'set_status', 'clear_status', 'get_status', 'get_name', 'set_name', or 'get_version'",
                 status.action
             );
             vec![]
@@ -342,6 +350,25 @@ mod tests {
             vec![PipeEffect::PipeOutput {
                 pipe_name: "tab-status".into(),
                 output: "Work".into()
+            }]
+        );
+    }
+
+    // ==================== handle_status: get_version ====================
+
+    #[test]
+    fn get_version_returns_cargo_pkg_version() {
+        let mut map = make_map(&[(1, 0, "Work")]);
+        let effects = handle_status(
+            &mut map,
+            &payload(r#"{"pane_id":"1","action":"get_version"}"#),
+            "tab-status",
+        );
+        assert_eq!(
+            effects,
+            vec![PipeEffect::PipeOutput {
+                pipe_name: "tab-status".into(),
+                output: env!("CARGO_PKG_VERSION").into()
             }]
         );
     }
