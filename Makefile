@@ -35,6 +35,6 @@ test:
 
 # Test in live Zellij session (run after installing and restarting zellij)
 test-live:
-	zellij pipe --name tab-rename -- '{"pane_id": "$(ZELLIJ_PANE_ID)", "name": "Test-Rename"}'
+	zellij pipe --name tab-rename -- '{"pane_id": "$(ZELLIJ_PANE_ID)", "name": "Test-Rename"}' < /dev/null
 	sleep 0.5
 	zellij action query-tab-names
