@@ -17,6 +17,8 @@ pub struct StatusPayload {
     pub action: String,
     #[serde(default)]
     pub emoji: String,
+    #[serde(default)]
+    pub name: String,
 }
 
 /// Maps pane_id -> (tab_position, tab_name)
@@ -137,9 +139,31 @@ pub fn handle_status(
                 output: base_name.to_string(),
             }]
         }
+        "set_name" => {
+            if status.name.is_empty() {
+                eprintln!("[tab-status] ERROR: name is required for 'set_name' action");
+                return vec![];
+            }
+            let current_status = extract_status(&current_name);
+            let new_name = if current_status.is_empty() {
+                status.name.clone()
+            } else {
+                format!("{} {}", current_status, status.name)
+            };
+            eprintln!(
+                "[tab-status] set_name on tab {} (position {}): '{}' -> '{}'",
+                tab_id, tab_position, current_name, new_name
+            );
+            let effects = vec![PipeEffect::RenameTab {
+                tab_id,
+                name: new_name.clone(),
+            }];
+            update_cached_name(pane_to_tab, pane_id, new_name);
+            effects
+        }
         _ => {
             eprintln!(
-                "[tab-status] ERROR: unknown action '{}'. Use 'set_status', 'clear_status', 'get_status', or 'get_name'",
+                "[tab-status] ERROR: unknown action '{}'. Use 'set_status', 'clear_status', 'get_status', 'get_name', or 'set_name'",
                 status.action
             );
             vec![]
@@ -320,6 +344,75 @@ mod tests {
                 output: "Work".into()
             }]
         );
+    }
+
+    // ==================== handle_status: set_name ====================
+
+    #[test]
+    fn set_name_preserves_emoji_status() {
+        let mut map = make_map(&[(1, 0, "🤖 Work")]);
+        let effects = handle_status(
+            &mut map,
+            &payload(r#"{"pane_id":"1","action":"set_name","name":"Code"}"#),
+            "tab-status",
+        );
+        assert_eq!(
+            effects,
+            vec![PipeEffect::RenameTab {
+                tab_id: 1,
+                name: "🤖 Code".into()
+            }]
+        );
+    }
+
+    #[test]
+    fn set_name_without_status_sets_plain_name() {
+        let mut map = make_map(&[(1, 0, "Work")]);
+        let effects = handle_status(
+            &mut map,
+            &payload(r#"{"pane_id":"1","action":"set_name","name":"Code"}"#),
+            "tab-status",
+        );
+        assert_eq!(
+            effects,
+            vec![PipeEffect::RenameTab {
+                tab_id: 1,
+                name: "Code".into()
+            }]
+        );
+    }
+
+    #[test]
+    fn set_name_updates_cache() {
+        let mut map = make_map(&[(1, 0, "🤖 Work")]);
+        handle_status(
+            &mut map,
+            &payload(r#"{"pane_id":"1","action":"set_name","name":"Code"}"#),
+            "tab-status",
+        );
+        assert_eq!(map.get(&1).unwrap().1, "🤖 Code");
+    }
+
+    #[test]
+    fn set_name_empty_name_returns_no_effects() {
+        let mut map = make_map(&[(1, 0, "Work")]);
+        let effects = handle_status(
+            &mut map,
+            &payload(r#"{"pane_id":"1","action":"set_name","name":""}"#),
+            "tab-status",
+        );
+        assert_eq!(effects, vec![]);
+    }
+
+    #[test]
+    fn set_name_missing_name_field_returns_no_effects() {
+        let mut map = make_map(&[(1, 0, "Work")]);
+        let effects = handle_status(
+            &mut map,
+            &payload(r#"{"pane_id":"1","action":"set_name"}"#),
+            "tab-status",
+        );
+        assert_eq!(effects, vec![]);
     }
 
     // ==================== handle_status: error paths ====================
