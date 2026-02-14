@@ -80,11 +80,9 @@ send_to_plugin() {
     fi
 
     # --plugin flag auto-launches the plugin if not already running
-    # Timeout prevents hanging if plugin is unresponsive
-    if ! timeout 3s zellij pipe --plugin "$PLUGIN_PATH" --name tab-status -- "$payload" < /dev/null; then
-        echo "Error: zellij pipe timeout or failed" >&2
-        return 1
-    fi
+    # || true: pipe may timeout during session teardown (e.g. SessionEnd hooks),
+    # this is non-critical — errors are still printed to stderr
+    timeout 3s zellij pipe --plugin "$PLUGIN_PATH" --name tab-status -- "$payload" < /dev/null || true
 }
 
 # Exit early if not in zellij
@@ -121,18 +119,18 @@ case "${1:-}" in
         check_zellij
         send_to_plugin "get_name"
         ;;
-    -*)
-        echo "Unknown option: $1" >&2
-        show_help
-        exit 1
-        ;;
-    --set-name|-s)
+    -s|--set-name)
         if [[ -z "${2:-}" ]]; then
             echo "Error: --set-name requires a name argument" >&2
             exit 1
         fi
         check_zellij
         send_to_plugin "set_name" "name" "$2"
+        ;;
+    -*)
+        echo "Unknown option: $1" >&2
+        show_help
+        exit 1
         ;;
     *)
         # Assume it's an emoji to set

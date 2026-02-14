@@ -75,8 +75,5 @@ pane_escaped=$(json_escape "$ZELLIJ_PANE_ID")
 title_escaped=$(json_escape "$TITLE")
 
 # --plugin flag auto-launches the plugin if not already running
-# Timeout prevents hanging if plugin is unresponsive
-if ! timeout 3s zellij pipe --plugin "$PLUGIN_PATH" --name tab-status -- "{\"pane_id\": \"$pane_escaped\", \"action\": \"set_name\", \"name\": \"$title_escaped\"}" < /dev/null; then
-    echo "Error: zellij pipe timeout or failed" >&2
-    exit 1
-fi
+# || true: pipe may timeout during session teardown, this is non-critical
+timeout 3s zellij pipe --plugin "$PLUGIN_PATH" --name tab-status -- "{\"pane_id\": \"$pane_escaped\", \"action\": \"set_name\", \"name\": \"$title_escaped\"}" < /dev/null || true
