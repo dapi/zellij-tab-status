@@ -99,7 +99,7 @@ impl State {
                         continue;
                     }
 
-                    // Use tab.position for rename_tab API, not display_index
+                    // Store tab.position (0-indexed); pipe_handler adds +1 for rename_tab API
                     self.pane_to_tab
                         .insert(pane.id, (tab.position, tab.name.clone()));
 

@@ -8,8 +8,8 @@
 #   zellij-tab-status              # Get current status emoji
 #   zellij-tab-status --name       # Get base name (without status)
 #
-# All operations are performed atomically via the zellij-tab-status plugin.
-# The status is the first character followed by a space.
+# All operations are handled sequentially by the plugin - no client-side race conditions.
+# The status is the first grapheme cluster followed by a space.
 # "🤖 Working" -> status: 🤖, name: Working
 
 set -euo pipefail
@@ -31,7 +31,7 @@ Examples:
   zellij-tab-status --clear        # "🤖 Working" -> "Working"
   zellij-tab-status                # Output: 🤖
 
-All operations are atomic (via plugin) - no race conditions.
+All operations are sequential (via plugin) - no client-side race conditions.
 
 Requirements:
   - Must be run inside a zellij session

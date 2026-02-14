@@ -4,7 +4,7 @@ use serde::Deserialize;
 
 use crate::status_utils::{extract_base_name, extract_status};
 
-/// Side effects that handlers request, executed by the plugin shell
+/// Side effects returned by pure handlers, executed by main.rs via Zellij API calls
 #[derive(Debug, PartialEq)]
 pub enum PipeEffect {
     RenameTab { tab_id: u32, name: String },
@@ -301,7 +301,7 @@ mod tests {
     }
 
     #[test]
-    fn clear_status_on_plain_name_is_noop() {
+    fn clear_status_on_plain_name_still_renames() {
         let mut map = make_map(&[(1, 0, "Work")]);
         let effects = handle_status(
             &mut map,
@@ -486,6 +486,112 @@ mod tests {
             vec![PipeEffect::RenameTab {
                 tab_id: 3, // position 2 + 1
                 name: "🔥 Tab3".into()
+            }]
+        );
+    }
+
+    #[test]
+    fn rename_tab_id_is_one_indexed() {
+        let mut map = make_map(&[(5, 3, "Tab4")]);
+        let effects = handle_rename(&mut map, &payload(r#"{"pane_id":"5","name":"Renamed"}"#));
+        assert_eq!(
+            effects,
+            vec![PipeEffect::RenameTab {
+                tab_id: 4, // position 3 + 1
+                name: "Renamed".into()
+            }]
+        );
+    }
+
+    // ==================== pipe_name passthrough ====================
+
+    #[test]
+    fn pipe_output_uses_provided_pipe_name() {
+        let mut map = make_map(&[(1, 0, "🤖 Work")]);
+        let effects = handle_status(
+            &mut map,
+            &payload(r#"{"pane_id":"1","action":"get_status"}"#),
+            "custom-pipe-name",
+        );
+        assert_eq!(
+            effects,
+            vec![PipeEffect::PipeOutput {
+                pipe_name: "custom-pipe-name".into(),
+                output: "🤖".into()
+            }]
+        );
+    }
+
+    // ==================== cache immutability ====================
+
+    #[test]
+    fn get_status_does_not_mutate_cache() {
+        let mut map = make_map(&[(1, 0, "🤖 Work")]);
+        handle_status(
+            &mut map,
+            &payload(r#"{"pane_id":"1","action":"get_status"}"#),
+            "tab-status",
+        );
+        assert_eq!(map.get(&1).unwrap().1, "🤖 Work");
+    }
+
+    #[test]
+    fn get_name_does_not_mutate_cache() {
+        let mut map = make_map(&[(1, 0, "🤖 Work")]);
+        handle_status(
+            &mut map,
+            &payload(r#"{"pane_id":"1","action":"get_name"}"#),
+            "tab-status",
+        );
+        assert_eq!(map.get(&1).unwrap().1, "🤖 Work");
+    }
+
+    #[test]
+    fn error_paths_do_not_mutate_cache() {
+        let mut map = make_map(&[(1, 0, "Work")]);
+        let original = map.clone();
+
+        handle_status(
+            &mut map,
+            &payload(r#"{"pane_id":"abc","action":"set_status","emoji":"🤖"}"#),
+            "tab-status",
+        );
+        assert_eq!(map, original, "cache must not change on invalid pane_id");
+
+        handle_status(
+            &mut map,
+            &payload(r#"{"pane_id":"1","action":"destroy"}"#),
+            "tab-status",
+        );
+        assert_eq!(map, original, "cache must not change on unknown action");
+    }
+
+    // ==================== additional edge cases ====================
+
+    #[test]
+    fn set_status_missing_emoji_field_returns_no_effects() {
+        let mut map = make_map(&[(1, 0, "Work")]);
+        let effects = handle_status(
+            &mut map,
+            &payload(r#"{"pane_id":"1","action":"set_status"}"#),
+            "tab-status",
+        );
+        assert_eq!(effects, vec![]);
+    }
+
+    #[test]
+    fn get_name_returns_full_name_when_no_status() {
+        let mut map = make_map(&[(1, 0, "Work")]);
+        let effects = handle_status(
+            &mut map,
+            &payload(r#"{"pane_id":"1","action":"get_name"}"#),
+            "tab-status",
+        );
+        assert_eq!(
+            effects,
+            vec![PipeEffect::PipeOutput {
+                pipe_name: "tab-status".into(),
+                output: "Work".into()
             }]
         );
     }

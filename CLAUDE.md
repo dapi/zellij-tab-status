@@ -75,9 +75,9 @@ Plugin uses `zellij-tile` crate:
 
 ### State Management
 
-- `pane_to_tab: BTreeMap<u32, (usize, String)>` — maps pane_id to (tab_position, tab_name)
+- `pane_to_tab: PaneTabMap` (alias for `BTreeMap<u32, (usize, String)>`) — maps pane_id to (tab_position, tab_name)
 - Rebuilt on every `TabUpdate` or `PaneUpdate` event
-- Tab position is 0-indexed internally, 1-indexed for `rename_tab()` API
+- Tab position is 0-indexed internally (from `TabInfo.position`), converted to 1-indexed `tab_id` in `pipe_handler.rs` for the `rename_tab()` API
 
 ### Unicode Handling
 
