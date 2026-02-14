@@ -7,6 +7,7 @@
 #   zellij-tab-status --clear      # Remove status emoji
 #   zellij-tab-status              # Get current status emoji
 #   zellij-tab-status --name       # Get base name (without status)
+#   zellij-tab-status --set-name X # Set tab name, preserving status emoji
 #
 # All operations are handled sequentially by the plugin - no client-side race conditions.
 # The status is the first grapheme cluster followed by a space.
@@ -23,6 +24,7 @@ Usage:
   zellij-tab-status --clear, -c    Remove status emoji
   zellij-tab-status --get, -g      Get current status emoji (default if no args)
   zellij-tab-status --name, -n     Get base name (without status)
+  zellij-tab-status --set-name, -s Set tab name (preserving status emoji)
   zellij-tab-status --help, -h     Show this help
 
 Examples:
@@ -30,6 +32,8 @@ Examples:
   zellij-tab-status ⏳             # "🤖 Working" -> "⏳ Working"
   zellij-tab-status --clear        # "🤖 Working" -> "Working"
   zellij-tab-status                # Output: 🤖
+  zellij-tab-status --set-name Code  # "🤖 Working" -> "🤖 Code"
+  zellij-tab-status -s Code        # "Working" -> "Code"
 
 All operations are sequential (via plugin) - no client-side race conditions.
 
@@ -52,22 +56,25 @@ json_escape() {
 }
 
 # Send command to plugin via pipe
+# Usage: send_to_plugin <action> [<field> <value>]
 send_to_plugin() {
     local action="$1"
-    local emoji="${2:-}"
+    local field="${2:-}"
+    local value="${3:-}"
 
     if [[ -z "${ZELLIJ_PANE_ID:-}" ]]; then
         echo "Error: ZELLIJ_PANE_ID not set" >&2
         exit 1
     fi
 
-    local pane_escaped action_escaped emoji_escaped payload
+    local pane_escaped action_escaped payload
     pane_escaped=$(json_escape "$ZELLIJ_PANE_ID")
     action_escaped=$(json_escape "$action")
 
-    if [[ -n "$emoji" ]]; then
-        emoji_escaped=$(json_escape "$emoji")
-        payload="{\"pane_id\": \"$pane_escaped\", \"action\": \"$action_escaped\", \"emoji\": \"$emoji_escaped\"}"
+    if [[ -n "$field" ]]; then
+        local value_escaped
+        value_escaped=$(json_escape "$value")
+        payload="{\"pane_id\": \"$pane_escaped\", \"action\": \"$action_escaped\", \"$field\": \"$value_escaped\"}"
     else
         payload="{\"pane_id\": \"$pane_escaped\", \"action\": \"$action_escaped\"}"
     fi
@@ -119,9 +126,17 @@ case "${1:-}" in
         show_help
         exit 1
         ;;
+    --set-name|-s)
+        if [[ -z "${2:-}" ]]; then
+            echo "Error: --set-name requires a name argument" >&2
+            exit 1
+        fi
+        check_zellij
+        send_to_plugin "set_name" "name" "$2"
+        ;;
     *)
         # Assume it's an emoji to set
         check_zellij
-        send_to_plugin "set_status" "$1"
+        send_to_plugin "set_status" "emoji" "$1"
         ;;
 esac
