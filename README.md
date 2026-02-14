@@ -7,7 +7,8 @@ Zellij plugin for managing tab status with emoji prefixes.
 ## Features
 
 - **Set/clear emoji status** on any tab by pane_id
-- **Query current status** or base name programmatically
+- **Rename tabs** without losing the emoji status prefix
+- **Query current status**, base name, or plugin version programmatically
 - **Atomic operations** — no race conditions when updating status
 - **Unicode-aware** — handles complex emoji (flags 🇺🇸, skin tones 👋🏻, ZWJ sequences 👨‍👩‍👧)
 
@@ -58,7 +59,14 @@ zellij pipe --name tab-status -- '{"pane_id": "'$ZELLIJ_PANE_ID'", "action": "se
 zellij pipe --name tab-status -- '{"pane_id": "'$ZELLIJ_PANE_ID'", "action": "clear_status"}'
 ```
 
-### Query Status
+### Rename Tab (Preserving Status)
+
+```bash
+# Rename tab without losing emoji: "🤖 my-tab" → "🤖 new-name"
+zellij pipe --name tab-status -- '{"pane_id": "'$ZELLIJ_PANE_ID'", "action": "set_name", "name": "new-name"}'
+```
+
+### Query
 
 ```bash
 # Get current emoji (outputs to stdout)
@@ -68,13 +76,10 @@ zellij pipe --name tab-status -- '{"pane_id": "'$ZELLIJ_PANE_ID'", "action": "ge
 # Get base name without emoji
 zellij pipe --name tab-status -- '{"pane_id": "'$ZELLIJ_PANE_ID'", "action": "get_name"}'
 # Output: my-tab
-```
 
-### Direct Tab Rename (Legacy)
-
-```bash
-# Rename tab completely (use tab-status for status management instead)
-zellij pipe --name tab-rename -- '{"pane_id": "'$ZELLIJ_PANE_ID'", "name": "New Name"}'
+# Get installed plugin version
+zellij pipe --name tab-status -- '{"pane_id": "'$ZELLIJ_PANE_ID'", "action": "get_version"}'
+# Output: 0.3.1
 ```
 
 ## Status Emoji Examples
@@ -112,8 +117,10 @@ zellij-tab-status ⏳           # Change status
 zellij-tab-status --clear      # Remove status
 zellij-tab-status              # Get current emoji
 zellij-tab-status --name       # Get base name
+zellij-tab-status -s "Code"   # Rename tab (preserving emoji)
+zellij-tab-status --version    # Get plugin version
 
-zellij-rename-tab "New Name"   # Rename tab completely
+zellij-rename-tab "New Name"   # Rename tab (preserving emoji)
 ```
 
 ### Shell aliases (optional)
@@ -124,6 +131,7 @@ Add to `~/.bashrc` or `~/.zshrc`:
 alias ts='zellij-tab-status'
 alias tsc='zellij-tab-status --clear'
 alias tsn='zellij-tab-status --name'
+alias tsr='zellij-tab-status --set-name'
 ```
 
 ## Integration Examples
@@ -196,16 +204,8 @@ JSON payload with `pane_id` and `action`:
 | `clear_status` | — | Remove emoji prefix |
 | `get_status` | — | Output current emoji to stdout |
 | `get_name` | — | Output base name (without emoji) to stdout |
-
-### `tab-rename` Pipe (Legacy)
-
-JSON payload with `pane_id` and `name`:
-
-```json
-{"pane_id": "123", "name": "New Tab Name"}
-```
-
-Renames tab completely. Use `tab-status` for status emoji management.
+| `set_name` | `name` | Set tab name, preserving emoji prefix |
+| `get_version` | — | Output plugin version to stdout |
 
 ### Status Format
 
@@ -227,7 +227,7 @@ tail -f /tmp/zellij-$(id -u)/zellij-log/zellij.log | grep tab-status
 
 ### Plugin Not Responding
 
-1. Verify plugin is loaded: check Zellij logs for `[tab-status] Plugin loaded`
+1. Verify plugin is loaded: run `zellij-tab-status --version` or check Zellij logs for `[tab-status] Plugin loaded`
 2. Check `$ZELLIJ_PANE_ID` is set (only works inside Zellij)
 3. Restart Zellij session after config changes
 

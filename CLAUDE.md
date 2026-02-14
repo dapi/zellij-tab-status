@@ -60,17 +60,14 @@ Plugin uses `zellij-tile` crate:
 
 ### Pipe Commands
 
-**tab-rename** (legacy):
-```json
-{"pane_id": "123", "name": "New Tab Name"}
-```
-
-**tab-status** (recommended):
+All commands go through `tab-status` pipe:
 ```json
 {"pane_id": "123", "action": "set_status", "emoji": "🤖"}
 {"pane_id": "123", "action": "clear_status"}
 {"pane_id": "123", "action": "get_status"}
 {"pane_id": "123", "action": "get_name"}
+{"pane_id": "123", "action": "set_name", "name": "New Name"}
+{"pane_id": "123", "action": "get_version"}
 ```
 
 ### State Management
