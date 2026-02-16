@@ -48,9 +48,15 @@ impl ZellijPlugin for State {
 
     fn pipe(&mut self, pipe_message: PipeMessage) -> bool {
         eprintln!(
-            "[tab-status] Pipe: name={}, payload={:?}",
-            pipe_message.name, pipe_message.payload
+            "[tab-status] Pipe: name={}, source={:?}, payload={:?}",
+            pipe_message.name, pipe_message.source, pipe_message.payload
         );
+
+        // Extract CLI pipe ID for response routing
+        let cli_pipe_id = match &pipe_message.source {
+            PipeSource::Cli(pipe_id) => Some(pipe_id.clone()),
+            _ => None,
+        };
 
         let effects = match pipe_message.name.as_str() {
             "tab-status" => pipe_handler::handle_status(
@@ -67,17 +73,24 @@ impl ZellijPlugin for State {
             }
         };
 
-        for effect in effects {
-            match effect {
-                PipeEffect::RenameTab { tab_id, name } => rename_tab(tab_id, name),
-                PipeEffect::PipeOutput { pipe_name, output } => {
-                    cli_pipe_output(&pipe_name, &output);
+        if let Some(ref pipe_id) = cli_pipe_id {
+            for effect in effects {
+                match effect {
+                    PipeEffect::RenameTab { tab_id, name } => rename_tab(tab_id, name),
+                    PipeEffect::PipeOutput { output, .. } => {
+                        cli_pipe_output(pipe_id, &output);
+                    }
+                }
+            }
+            // Unblock using CLI pipe ID so the response reaches the correct client
+            unblock_cli_pipe_input(pipe_id);
+        } else {
+            for effect in effects {
+                if let PipeEffect::RenameTab { tab_id, name } = effect {
+                    rename_tab(tab_id, name);
                 }
             }
         }
-
-        // Always unblock CLI pipe to prevent `zellij pipe` from hanging
-        unblock_cli_pipe_input(&pipe_message.name);
 
         false
     }
