@@ -10,6 +10,7 @@
 - **Target:** `wasm32-wasip1` (WebAssembly)
 - **Framework:** `zellij-tile` 0.43.1
 - **Dependencies:** serde, serde_json, unicode-segmentation
+- **Testing:** Docker + Zellij 0.43.1 for integration tests
 
 ## Build Commands
 
@@ -26,6 +27,9 @@ make clean
 # Run unit tests (no WASM runtime needed)
 make test
 
+# Run integration tests (Docker required, no Zellij session needed)
+make test-integration
+
 # Test in live Zellij session
 make test-live
 ```
@@ -34,17 +38,23 @@ make test-live
 
 ```
 zellij-tab-status/
-├── Cargo.toml            # Package config, dependencies
-├── Cargo.lock            # Locked versions
-├── Makefile              # Build/install targets
-├── README.md             # User documentation
+├── Cargo.toml              # Package config, dependencies
+├── Cargo.lock              # Locked versions
+├── Makefile                # Build/install/test targets
+├── Dockerfile.test         # Docker image for integration tests (Ubuntu + Zellij)
+├── README.md               # User documentation
 ├── src/
-│   ├── main.rs           # Plugin entry point (Zellij API calls)
-│   ├── lib.rs            # Library root (module exports)
-│   ├── pipe_handler.rs   # Pipe command handlers (pure logic + tests)
-│   └── status_utils.rs   # Unicode emoji/status extraction (+ tests)
-└── scripts/
-    └── zellij-tab-status   # CLI: manage tab status emoji
+│   ├── main.rs             # Plugin entry point (Zellij API calls)
+│   ├── lib.rs              # Library root (module exports)
+│   ├── pipe_handler.rs     # Pipe command handlers (pure logic + tests)
+│   └── status_utils.rs     # Unicode emoji/status extraction (+ tests)
+├── scripts/
+│   ├── zellij-tab-status       # CLI: manage tab status emoji
+│   ├── integration-test.sh     # Integration test cases (runs inside Zellij)
+│   └── docker-test-runner.sh   # Starts headless Zellij in Docker, runs tests
+└── .github/workflows/
+    ├── ci.yml              # CI: lint, unit tests, build, integration tests
+    └── release.yml         # Release: build + GitHub Release on tag push
 ```
 
 ## Architecture
@@ -66,8 +76,16 @@ All commands go through `tab-status` pipe:
 {"pane_id": "123", "action": "get_status"}
 {"pane_id": "123", "action": "get_name"}
 {"pane_id": "123", "action": "set_name", "name": "New Name"}
-{"pane_id": "123", "action": "get_version"}
+{"action": "get_version"}
 ```
+
+Note: `get_version` does not require `pane_id`.
+
+### Plugin Loading
+
+The plugin is loaded **on-demand** via `zellij pipe --plugin "file:path.wasm"`. Do NOT add it to `load_plugins` in config.kdl — this creates duplicate instances when CLI also uses `--plugin`.
+
+For integration tests in Docker, the plugin IS pre-loaded via `load_plugins` in a test-specific config, and pipe commands use `--name` only (no `--plugin`).
 
 ### State Management
 
@@ -99,8 +117,11 @@ Uses `unicode-segmentation` for proper emoji handling:
 ## Testing
 
 ```bash
-# Unit tests (pipe_handler + status_utils, no WASM runtime needed):
+# Unit tests (39 tests in pipe_handler + status_utils, no WASM runtime needed):
 cargo test --lib
+
+# Integration tests (12 tests, Docker required, runs headless Zellij):
+make test-integration
 
 # In Zellij session (after make install + restart):
 make test-live
@@ -108,6 +129,21 @@ make test-live
 # Check logs:
 tail -f /tmp/zellij-1000/zellij-log/zellij.log | grep tab-status
 ```
+
+### Integration Test Architecture
+
+`make test-integration` runs:
+1. `cargo build --release --target wasm32-wasip1` — build fresh .wasm
+2. `docker build -f Dockerfile.test` — Ubuntu + Zellij image
+3. `docker run` with mounted .wasm + scripts:
+   - `docker-test-runner.sh` creates Zellij config + permissions, starts headless session via `script` (PTY), discovers pane ID, runs tests
+   - `integration-test.sh` executes 12 test cases via `zellij pipe`
+
+Key details for Docker testing:
+- Zellij needs PTY: `script -qfc "zellij ..." /dev/null > /dev/null 2>&1 &`
+- Permissions pre-approved in `~/.cache/zellij/permissions.kdl` (no UI in headless)
+- Pane ID discovered via `zellij action write-chars 'echo $ZELLIJ_PANE_ID > /tmp/pane_id'`
+- WASM compile takes ~3s; `sleep 5` after session start
 
 ## Related Projects
 
