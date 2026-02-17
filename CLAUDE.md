@@ -90,6 +90,12 @@ Uses `unicode-segmentation` for proper emoji handling:
 - `unblock_cli_pipe_input()` called after CLI pipe handling to prevent CLI hang (only for `PipeSource::Cli`)
 - No panics — all errors logged and gracefully handled
 
+### NEVER use `zellij action rename-tab`
+
+**ЗАПРЕЩЕНО** использовать `zellij action rename-tab` в скриптах и врапперах. Эта команда переименовывает FOCUSED (активную) вкладку, а не конкретную. Скрипт должен работать из ЛЮБОЙ вкладки, даже если она не в фокусе.
+
+Все переименования табов ТОЛЬКО через plugin API `rename_tab(tab_id, name)` внутри WASM-плагина. CLI-скрипт отправляет команду через `zellij pipe`, плагин сам вызывает `rename_tab()` с правильным `tab_id`, определённым по `pane_id`.
+
 ## Testing
 
 ```bash

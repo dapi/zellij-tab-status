@@ -1,4 +1,4 @@
-.PHONY: build install install-scripts configure-zellij clean test test-live
+.PHONY: build install install-scripts configure-zellij clean test test-live test-integration
 
 PLUGIN_NAME = zellij-tab-status
 TARGET = target/wasm32-wasip1/release/zellij-tab-status.wasm
@@ -38,3 +38,7 @@ test-live:
 	zellij pipe --plugin "file:$(INSTALL_DIR)/$(PLUGIN_NAME).wasm" --name tab-status -- '{"pane_id": "'"$$ZELLIJ_PANE_ID"'", "action": "set_status", "emoji": "🧪"}' < /dev/null
 	sleep 0.5
 	zellij action query-tab-names
+
+# Integration tests (must run inside Zellij session after make install)
+test-integration:
+	./scripts/integration-test.sh
