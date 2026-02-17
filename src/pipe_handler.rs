@@ -13,6 +13,7 @@ pub enum PipeEffect {
 
 #[derive(Debug, Deserialize)]
 pub struct StatusPayload {
+    #[serde(default)]
     pub pane_id: String,
     pub action: String,
     #[serde(default)]
@@ -76,6 +77,15 @@ pub fn handle_status(pane_to_tab: &mut PaneTabMap, payload: &Option<String>) -> 
         }
     };
 
+    // Actions that don't require pane context
+    if status.action == "get_version" {
+        let version = env!("CARGO_PKG_VERSION");
+        eprintln!("[tab-status] get_version: '{}'", version);
+        return vec![PipeEffect::PipeOutput {
+            output: version.to_string(),
+        }];
+    }
+
     let Some(pane_id) = parse_pane_id(&status.pane_id, "tab-status") else {
         return vec![];
     };
@@ -131,13 +141,6 @@ pub fn handle_status(pane_to_tab: &mut PaneTabMap, payload: &Option<String>) -> 
             eprintln!("[tab-status] get_name: '{}'", base_name);
             vec![PipeEffect::PipeOutput {
                 output: base_name.to_string(),
-            }]
-        }
-        "get_version" => {
-            let version = env!("CARGO_PKG_VERSION");
-            eprintln!("[tab-status] get_version: '{}'", version);
-            vec![PipeEffect::PipeOutput {
-                output: version.to_string(),
             }]
         }
         "set_name" => {
