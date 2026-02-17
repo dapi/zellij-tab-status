@@ -52,3 +52,26 @@ jobs:
         with:
           name: zellij-tab-status.wasm
           path: target/wasm32-wasip1/release/zellij-tab-status.wasm
+
+  integration-test:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download WASM artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: zellij-tab-status.wasm
+          path: target/wasm32-wasip1/release/
+
+      - name: Build test Docker image
+        run: docker build -f Dockerfile.test -t zellij-tab-status-test .
+
+      - name: Run integration tests
+        run: |
+          docker run --rm \
+            -v "$(pwd)/target/wasm32-wasip1/release/zellij-tab-status.wasm:/test/plugin.wasm:ro" \
+            -v "$(pwd)/scripts:/test/scripts:ro" \
+            zellij-tab-status-test \
+            /test/scripts/docker-test-runner.sh

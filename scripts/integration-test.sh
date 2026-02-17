@@ -10,7 +10,7 @@
 
 set -euo pipefail
 
-PLUGIN_PATH="file:$HOME/.config/zellij/plugins/zellij-tab-status.wasm"
+PLUGIN_PATH="${PLUGIN_PATH:-file:$HOME/.config/zellij/plugins/zellij-tab-status.wasm}"
 PASS=0
 FAIL=0
 PANE_ID="$ZELLIJ_PANE_ID"

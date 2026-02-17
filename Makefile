@@ -1,4 +1,4 @@
-.PHONY: build install install-scripts configure-zellij clean test test-live test-integration
+.PHONY: build install install-scripts clean test test-live test-integration
 
 PLUGIN_NAME = zellij-tab-status
 TARGET = target/wasm32-wasip1/release/zellij-tab-status.wasm
@@ -8,7 +8,7 @@ SCRIPTS_DIR = $(HOME)/.local/bin
 build:
 	cargo build --release --target wasm32-wasip1
 
-install: build install-scripts configure-zellij
+install: build install-scripts
 	mkdir -p $(INSTALL_DIR)
 	cp $(TARGET) $(INSTALL_DIR)/$(PLUGIN_NAME).wasm
 	@echo ""
@@ -17,9 +17,6 @@ install: build install-scripts configure-zellij
 	@echo "   • Script: $(SCRIPTS_DIR)/zellij-tab-status"
 	@echo ""
 	@echo "🔄 Restart zellij session to load the plugin."
-
-configure-zellij:
-	@./scripts/configure-zellij.sh || echo "⚠️  Auto-config failed. Add plugin to config.kdl manually."
 
 install-scripts:
 	mkdir -p $(SCRIPTS_DIR)
@@ -39,6 +36,11 @@ test-live:
 	sleep 0.5
 	zellij action query-tab-names
 
-# Integration tests (must run inside Zellij session after make install)
-test-integration:
-	./scripts/integration-test.sh
+# Integration tests (runs in Docker with real Zellij session)
+test-integration: build
+	docker build -f Dockerfile.test -t zellij-tab-status-test .
+	docker run --rm \
+		-v "$$(pwd)/$(TARGET):/test/plugin.wasm:ro" \
+		-v "$$(pwd)/scripts:/test/scripts:ro" \
+		zellij-tab-status-test \
+		/test/scripts/docker-test-runner.sh
