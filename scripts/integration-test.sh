@@ -10,7 +10,7 @@
 
 set -euo pipefail
 
-PLUGIN_PATH="${PLUGIN_PATH:-file:$HOME/.config/zellij/plugins/zellij-tab-status.wasm}"
+PLUGIN_PATH="${PLUGIN_PATH:-}"
 PASS=0
 FAIL=0
 PANE_ID="$ZELLIJ_PANE_ID"
@@ -19,7 +19,11 @@ CREATED_TAB=false
 # --- Helpers ---
 
 pipe_cmd() {
-    timeout 3s zellij pipe --plugin "$PLUGIN_PATH" --name tab-status -- "$1" < /dev/null
+    if [[ -n "${PLUGIN_PATH:-}" ]]; then
+        timeout 10s zellij pipe --plugin "$PLUGIN_PATH" --name tab-status -- "$1" < /dev/null
+    else
+        timeout 10s zellij pipe --name tab-status -- "$1" < /dev/null
+    fi
 }
 
 assert_eq() {

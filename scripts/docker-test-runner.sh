@@ -16,10 +16,31 @@ if [[ ! -f "$PLUGIN_WASM" ]]; then
     exit 1
 fi
 
+# --- Configure Zellij ---
+# Pre-load plugin via config (avoids --plugin flag which creates duplicate instances)
+# Pre-approve permissions (no UI to approve in headless mode)
+mkdir -p /root/.config/zellij /root/.cache/zellij
+
+cat > /root/.config/zellij/config.kdl <<EOF
+default_layout "compact"
+load_plugins {
+    "file:$PLUGIN_WASM"
+}
+EOF
+
+cat > /root/.cache/zellij/permissions.kdl <<EOF
+"$PLUGIN_WASM" {
+    ReadApplicationState
+    ChangeApplicationState
+    ReadCliPipes
+}
+EOF
+
 # --- Start Zellij headlessly ---
 # `script` provides the pseudo-TTY that Zellij requires.
 echo "Starting Zellij session '$SESSION'..."
-script -qfc "zellij --session $SESSION options --disable-mouse-mode" /dev/null &
+export ZELLIJ_SESSION="$SESSION"
+script -qfc "zellij --session $SESSION options --disable-mouse-mode" /dev/null > /dev/null 2>&1 &
 ZELLIJ_PID=$!
 
 # Wait for session to be ready
@@ -41,27 +62,23 @@ if ! zellij list-sessions 2>/dev/null | grep -q "$SESSION"; then
     exit 1
 fi
 
-# --- Discover pane ID ---
-export ZELLIJ_SESSION="$SESSION"
+# Wait for plugin WASM compilation and initialization
+sleep 5
 
-# Let Zellij fully initialize and deliver TabUpdate/PaneUpdate
+# Close floating "about" pane to focus terminal
+zellij action toggle-floating-panes
+sleep 1
+
+# --- Discover pane ID ---
+# Write command into the terminal pane to export ZELLIJ_PANE_ID
+zellij action write-chars 'echo $ZELLIJ_PANE_ID > /tmp/pane_id'
+zellij action write 13
 sleep 2
 
-PANE_ID=$(zellij action dump-layout 2>/dev/null \
-    | grep -oP 'terminal_pane_id="\K[0-9]+' \
-    | head -1)
+PANE_ID=$(cat /tmp/pane_id 2>/dev/null | tr -d '[:space:]')
 
 if [[ -z "$PANE_ID" ]]; then
-    # Fallback: try numeric IDs from dump-layout
-    PANE_ID=$(zellij action dump-layout 2>/dev/null \
-        | grep -oP 'pane_id="\K[0-9]+' \
-        | head -1)
-fi
-
-if [[ -z "$PANE_ID" ]]; then
-    echo "ERROR: Could not discover pane ID from dump-layout"
-    echo "Layout dump:"
-    zellij action dump-layout 2>/dev/null || echo "(dump failed)"
+    echo "ERROR: Could not discover pane ID"
     kill $ZELLIJ_PID 2>/dev/null || true
     exit 1
 fi
