@@ -3,18 +3,21 @@
 # zellij-tab-status - Manage status emoji in zellij tab name
 #
 # Usage:
+#   zellij-tab-status              # Get current status emoji (same as --get)
 #   zellij-tab-status 🤖           # Set status emoji
 #   zellij-tab-status --clear      # Remove status emoji
 #   zellij-tab-status --get        # Get current status emoji
 #   zellij-tab-status --name       # Get base name (without status)
 #   zellij-tab-status --set-name X # Set tab name, preserving status emoji
-#   zellij-tab-status --version    # Get plugin version
+#   zellij-tab-status --version    # Get script and plugin versions
 #
 # All operations are handled sequentially by the plugin - no client-side race conditions.
 # The status is the first grapheme cluster followed by a space.
 # "🤖 Working" -> status: 🤖, name: Working
 
 set -euo pipefail
+
+SCRIPT_VERSION="0.3.0"
 
 show_help() {
     cat <<'EOF'
@@ -26,7 +29,7 @@ Usage:
   zellij-tab-status --get, -g      Get current status emoji
   zellij-tab-status --name, -n     Get base name (without status)
   zellij-tab-status --set-name, -s Set tab name (preserving status emoji)
-  zellij-tab-status --version, -v  Get installed plugin version
+  zellij-tab-status --version, -v  Get script and plugin versions
   zellij-tab-status --help, -h     Show this help
 
 Examples:
@@ -47,7 +50,8 @@ EOF
 }
 
 # Plugin location
-PLUGIN_PATH="file:$HOME/.config/zellij/plugins/zellij-tab-status.wasm"
+WASM_PATH="$HOME/.config/zellij/plugins/zellij-tab-status.wasm"
+PLUGIN_PATH="file:$WASM_PATH"
 
 # Escape string for JSON (handles backslashes and quotes)
 json_escape() {
@@ -99,30 +103,40 @@ check_zellij() {
     fi
 
     # Check plugin is installed
-    local wasm_path="$HOME/.config/zellij/plugins/zellij-tab-status.wasm"
-    if [[ ! -f "$wasm_path" ]]; then
-        echo "Error: Plugin not installed at $wasm_path" >&2
+    if [[ ! -f "$WASM_PATH" ]]; then
+        echo "Error: Plugin not installed at $WASM_PATH" >&2
         echo "Run: make install (from zellij-tab-status directory)" >&2
         exit 1
     fi
 }
 
-# Main
+# Commands that work outside zellij
 case "${1:-}" in
-    -h|--help|"")
+    -h|--help)
         show_help
         exit 0
         ;;
-    -c|--clear)
-        check_zellij
-        send_to_plugin "clear_status"
+    -v|--version)
+        echo "script: $SCRIPT_VERSION"
+        if [[ -n "${ZELLIJ:-}" ]] && [[ -f "$WASM_PATH" ]]; then
+            printf "plugin: "
+            send_to_plugin "get_version"
+        fi
+        exit 0
         ;;
-    -g|--get)
-        check_zellij
+esac
+
+check_zellij
+
+# Commands that require zellij
+case "${1:-}" in
+    ""|--get|-g)
         send_to_plugin "get_status"
         ;;
+    -c|--clear)
+        send_to_plugin "clear_status"
+        ;;
     -n|--name)
-        check_zellij
         send_to_plugin "get_name"
         ;;
     -s|--set-name)
@@ -130,19 +144,7 @@ case "${1:-}" in
             echo "Error: --set-name requires a name argument" >&2
             exit 1
         fi
-        check_zellij
         send_to_plugin "set_name" "name" "$2"
-        ;;
-    -v|--version)
-        # Extract version from installed wasm binary (no plugin query needed)
-        PLUGIN_WASM="$HOME/.config/zellij/plugins/zellij-tab-status.wasm"
-        if [[ -f "$PLUGIN_WASM" ]]; then
-            version=$(grep -aoE 'Plugin loaded v[0-9]+\.[0-9]+\.[0-9]+' "$PLUGIN_WASM" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
-            echo "${version:-unknown}"
-        else
-            echo "Plugin not installed" >&2
-            exit 1
-        fi
         ;;
     -*)
         echo "Unknown option: $1" >&2
@@ -151,7 +153,6 @@ case "${1:-}" in
         ;;
     *)
         # Assume it's an emoji to set
-        check_zellij
         send_to_plugin "set_status" "emoji" "$1"
         ;;
 esac
