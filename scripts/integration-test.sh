@@ -67,10 +67,7 @@ echo "=== zellij-tab-status Integration Tests ==="
 echo "Pane ID: $PANE_ID"
 echo ""
 
-# Use zellij action rename-tab for initial test setup only (sets known starting state).
-# NOTE: rename-tab is ONLY acceptable here for test setup. Production code must use
-# the plugin's rename_tab() API via pipe commands — see CLAUDE.md.
-zellij action rename-tab "TestTab"
+pipe_cmd "{\"pane_id\":\"$PANE_ID\",\"action\":\"set_name\",\"name\":\"TestTab\"}"
 sleep 0.5
 
 # --- Test 1: get_name ---
@@ -126,8 +123,7 @@ sleep 0.2
 # --- Test 7: Multi-tab mapping (KEY TEST for Bug #1) ---
 echo "--- 7. Multi-tab: pane maps to correct tab ---"
 
-# Rename our tab to known name
-zellij action rename-tab "TabA"
+pipe_cmd "{\"pane_id\":\"$PANE_ID\",\"action\":\"set_name\",\"name\":\"TabA\"}"
 sleep 0.3
 
 # Create a second tab — focus moves there, but our pane stays in TabA
