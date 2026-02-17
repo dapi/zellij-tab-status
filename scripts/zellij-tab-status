@@ -24,6 +24,7 @@ show_help() {
 zellij-tab-status - Manage status emoji in zellij tab name
 
 Usage:
+  zellij-tab-status                 Get current status (same as --get)
   zellij-tab-status <emoji>        Set status emoji
   zellij-tab-status --clear, -c    Remove status emoji
   zellij-tab-status --get, -g      Get current status emoji
