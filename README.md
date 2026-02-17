@@ -136,13 +136,13 @@ alias tsr='zellij-tab-status --set-name'
 with-status() {
     local emoji="${1:-🤖}"
     shift
-    tab-status "$emoji"
+    zellij-tab-status "$emoji"
     "$@"
     local exit_code=$?
     if [[ $exit_code -eq 0 ]]; then
-        tab-status ✅
+        zellij-tab-status ✅
     else
-        tab-status ❌
+        zellij-tab-status ❌
     fi
     return $exit_code
 }
@@ -158,7 +158,7 @@ with-status 🚀 ./deploy.sh
 ```bash
 # .git/hooks/pre-commit
 #!/bin/bash
-tab-status 🔍
+zellij-tab-status 🔍
 # ... run checks ...
 ```
 
@@ -166,12 +166,12 @@ tab-status 🔍
 
 ```bash
 #!/bin/bash
-tab-status 🚀
+zellij-tab-status 🚀
 if deploy_to_staging; then
-    tab-status ✅
+    zellij-tab-status ✅
     echo "Deploy successful"
 else
-    tab-status ❌
+    zellij-tab-status ❌
     echo "Deploy failed"
     exit 1
 fi

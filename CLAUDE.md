@@ -87,7 +87,7 @@ Uses `unicode-segmentation` for proper emoji handling:
 - Log prefix: `[tab-status]` for all eprintln! calls
 - Error handling: handlers return `Vec<PipeEffect>` (empty on error), main.rs executes effects
 - "Functional core, imperative shell": pure handlers in `pipe_handler.rs`, side effects in `main.rs`
-- `unblock_cli_pipe_input()` always called after pipe handling to prevent CLI hang
+- `unblock_cli_pipe_input()` called after CLI pipe handling to prevent CLI hang (only for `PipeSource::Cli`)
 - No panics — all errors logged and gracefully handled
 
 ## Testing

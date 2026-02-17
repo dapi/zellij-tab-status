@@ -82,7 +82,7 @@ impl ZellijPlugin for State {
                     PipeEffect::RenameTab { name, .. } => {
                         cli_pipe_output(pipe_id, &name);
                     }
-                    PipeEffect::PipeOutput { output, .. } => {
+                    PipeEffect::PipeOutput { output } => {
                         cli_pipe_output(pipe_id, &output);
                     }
                 }

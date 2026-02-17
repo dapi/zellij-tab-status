@@ -73,10 +73,10 @@ create_backup() {
 insert_plugin() {
     # Check if load_plugins block exists
     if grep -q "^[[:space:]]*load_plugins {" "$CONFIG_FILE"; then
-        # Insert after "load_plugins {" (cross-platform: use temp file)
+        # Insert after "load_plugins {" (portable: awk works on both GNU and BSD)
         local tmpfile
         tmpfile=$(mktemp)
-        sed '/^[[:space:]]*load_plugins {/a\'"$PLUGIN_LINE" "$CONFIG_FILE" > "$tmpfile"
+        awk '/^[[:space:]]*load_plugins \{/ { print; print "'"$PLUGIN_LINE"'"; next } { print }' "$CONFIG_FILE" > "$tmpfile"
         mv "$tmpfile" "$CONFIG_FILE"
         log "Added plugin to existing load_plugins block"
     else
