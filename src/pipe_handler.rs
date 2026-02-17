@@ -8,7 +8,7 @@ use crate::status_utils::{extract_base_name, extract_status};
 #[derive(Debug, PartialEq)]
 pub enum PipeEffect {
     RenameTab { tab_id: u32, name: String },
-    PipeOutput { pipe_name: String, output: String },
+    PipeOutput { output: String },
 }
 
 #[derive(Debug, Deserialize)]
@@ -62,11 +62,7 @@ fn update_cached_name(pane_to_tab: &mut PaneTabMap, pane_id: u32, new_name: Stri
     }
 }
 
-pub fn handle_status(
-    pane_to_tab: &mut PaneTabMap,
-    payload: &Option<String>,
-    pipe_name: &str,
-) -> Vec<PipeEffect> {
+pub fn handle_status(pane_to_tab: &mut PaneTabMap, payload: &Option<String>) -> Vec<PipeEffect> {
     let Some(payload) = payload else {
         eprintln!("[tab-status] ERROR: missing payload");
         return vec![];
@@ -128,14 +124,12 @@ pub fn handle_status(
             let emoji = extract_status(&current_name);
             eprintln!("[tab-status] get_status: '{}'", emoji);
             vec![PipeEffect::PipeOutput {
-                pipe_name: pipe_name.to_string(),
                 output: emoji.to_string(),
             }]
         }
         "get_name" => {
             eprintln!("[tab-status] get_name: '{}'", base_name);
             vec![PipeEffect::PipeOutput {
-                pipe_name: pipe_name.to_string(),
                 output: base_name.to_string(),
             }]
         }
@@ -143,7 +137,6 @@ pub fn handle_status(
             let version = env!("CARGO_PKG_VERSION");
             eprintln!("[tab-status] get_version: '{}'", version);
             vec![PipeEffect::PipeOutput {
-                pipe_name: pipe_name.to_string(),
                 output: version.to_string(),
             }]
         }
@@ -202,7 +195,6 @@ mod tests {
         let effects = handle_status(
             &mut map,
             &payload(r#"{"pane_id":"1","action":"set_status","emoji":"🤖"}"#),
-            "tab-status",
         );
         assert_eq!(
             effects,
@@ -219,7 +211,6 @@ mod tests {
         handle_status(
             &mut map,
             &payload(r#"{"pane_id":"1","action":"set_status","emoji":"✅"}"#),
-            "tab-status",
         );
         assert_eq!(map.get(&1).unwrap().1, "✅ Work");
     }
@@ -230,7 +221,6 @@ mod tests {
         let effects = handle_status(
             &mut map,
             &payload(r#"{"pane_id":"1","action":"set_status","emoji":"✅"}"#),
-            "tab-status",
         );
         assert_eq!(
             effects,
@@ -247,7 +237,6 @@ mod tests {
         let effects = handle_status(
             &mut map,
             &payload(r#"{"pane_id":"1","action":"set_status","emoji":""}"#),
-            "tab-status",
         );
         assert_eq!(effects, vec![]);
     }
@@ -260,7 +249,6 @@ mod tests {
         let effects = handle_status(
             &mut map,
             &payload(r#"{"pane_id":"1","action":"clear_status"}"#),
-            "tab-status",
         );
         assert_eq!(
             effects,
@@ -277,7 +265,6 @@ mod tests {
         handle_status(
             &mut map,
             &payload(r#"{"pane_id":"1","action":"clear_status"}"#),
-            "tab-status",
         );
         assert_eq!(map.get(&1).unwrap().1, "Work");
     }
@@ -288,7 +275,6 @@ mod tests {
         let effects = handle_status(
             &mut map,
             &payload(r#"{"pane_id":"1","action":"clear_status"}"#),
-            "tab-status",
         );
         assert_eq!(
             effects,
@@ -307,12 +293,10 @@ mod tests {
         let effects = handle_status(
             &mut map,
             &payload(r#"{"pane_id":"1","action":"get_status"}"#),
-            "tab-status",
         );
         assert_eq!(
             effects,
             vec![PipeEffect::PipeOutput {
-                pipe_name: "tab-status".into(),
                 output: "🤖".into()
             }]
         );
@@ -324,15 +308,8 @@ mod tests {
         let effects = handle_status(
             &mut map,
             &payload(r#"{"pane_id":"1","action":"get_status"}"#),
-            "tab-status",
         );
-        assert_eq!(
-            effects,
-            vec![PipeEffect::PipeOutput {
-                pipe_name: "tab-status".into(),
-                output: "".into()
-            }]
-        );
+        assert_eq!(effects, vec![PipeEffect::PipeOutput { output: "".into() }]);
     }
 
     // ==================== handle_status: get_name ====================
@@ -340,15 +317,10 @@ mod tests {
     #[test]
     fn get_name_returns_base_name() {
         let mut map = make_map(&[(1, 0, "🤖 Work")]);
-        let effects = handle_status(
-            &mut map,
-            &payload(r#"{"pane_id":"1","action":"get_name"}"#),
-            "tab-status",
-        );
+        let effects = handle_status(&mut map, &payload(r#"{"pane_id":"1","action":"get_name"}"#));
         assert_eq!(
             effects,
             vec![PipeEffect::PipeOutput {
-                pipe_name: "tab-status".into(),
                 output: "Work".into()
             }]
         );
@@ -362,12 +334,10 @@ mod tests {
         let effects = handle_status(
             &mut map,
             &payload(r#"{"pane_id":"1","action":"get_version"}"#),
-            "tab-status",
         );
         assert_eq!(
             effects,
             vec![PipeEffect::PipeOutput {
-                pipe_name: "tab-status".into(),
                 output: env!("CARGO_PKG_VERSION").into()
             }]
         );
@@ -381,7 +351,6 @@ mod tests {
         let effects = handle_status(
             &mut map,
             &payload(r#"{"pane_id":"1","action":"set_name","name":"Code"}"#),
-            "tab-status",
         );
         assert_eq!(
             effects,
@@ -398,7 +367,6 @@ mod tests {
         let effects = handle_status(
             &mut map,
             &payload(r#"{"pane_id":"1","action":"set_name","name":"Code"}"#),
-            "tab-status",
         );
         assert_eq!(
             effects,
@@ -415,7 +383,6 @@ mod tests {
         handle_status(
             &mut map,
             &payload(r#"{"pane_id":"1","action":"set_name","name":"Code"}"#),
-            "tab-status",
         );
         assert_eq!(map.get(&1).unwrap().1, "🤖 Code");
     }
@@ -426,7 +393,6 @@ mod tests {
         let effects = handle_status(
             &mut map,
             &payload(r#"{"pane_id":"1","action":"set_name","name":""}"#),
-            "tab-status",
         );
         assert_eq!(effects, vec![]);
     }
@@ -434,11 +400,7 @@ mod tests {
     #[test]
     fn set_name_missing_name_field_returns_no_effects() {
         let mut map = make_map(&[(1, 0, "Work")]);
-        let effects = handle_status(
-            &mut map,
-            &payload(r#"{"pane_id":"1","action":"set_name"}"#),
-            "tab-status",
-        );
+        let effects = handle_status(&mut map, &payload(r#"{"pane_id":"1","action":"set_name"}"#));
         assert_eq!(effects, vec![]);
     }
 
@@ -447,14 +409,14 @@ mod tests {
     #[test]
     fn missing_payload_returns_no_effects() {
         let mut map = make_map(&[(1, 0, "Work")]);
-        let effects = handle_status(&mut map, &None, "tab-status");
+        let effects = handle_status(&mut map, &None);
         assert_eq!(effects, vec![]);
     }
 
     #[test]
     fn invalid_json_returns_no_effects() {
         let mut map = make_map(&[(1, 0, "Work")]);
-        let effects = handle_status(&mut map, &payload("not json"), "tab-status");
+        let effects = handle_status(&mut map, &payload("not json"));
         assert_eq!(effects, vec![]);
     }
 
@@ -464,7 +426,6 @@ mod tests {
         let effects = handle_status(
             &mut map,
             &payload(r#"{"pane_id":"999","action":"set_status","emoji":"🤖"}"#),
-            "tab-status",
         );
         assert_eq!(effects, vec![]);
     }
@@ -475,7 +436,6 @@ mod tests {
         let effects = handle_status(
             &mut map,
             &payload(r#"{"pane_id":"abc","action":"set_status","emoji":"🤖"}"#),
-            "tab-status",
         );
         assert_eq!(effects, vec![]);
     }
@@ -483,11 +443,7 @@ mod tests {
     #[test]
     fn unknown_action_returns_no_effects() {
         let mut map = make_map(&[(1, 0, "Work")]);
-        let effects = handle_status(
-            &mut map,
-            &payload(r#"{"pane_id":"1","action":"destroy"}"#),
-            "tab-status",
-        );
+        let effects = handle_status(&mut map, &payload(r#"{"pane_id":"1","action":"destroy"}"#));
         assert_eq!(effects, vec![]);
     }
 
@@ -499,32 +455,12 @@ mod tests {
         let effects = handle_status(
             &mut map,
             &payload(r#"{"pane_id":"5","action":"set_status","emoji":"🔥"}"#),
-            "tab-status",
         );
         assert_eq!(
             effects,
             vec![PipeEffect::RenameTab {
                 tab_id: 3, // position 2 + 1
                 name: "🔥 Tab3".into()
-            }]
-        );
-    }
-
-    // ==================== pipe_name passthrough ====================
-
-    #[test]
-    fn pipe_output_uses_provided_pipe_name() {
-        let mut map = make_map(&[(1, 0, "🤖 Work")]);
-        let effects = handle_status(
-            &mut map,
-            &payload(r#"{"pane_id":"1","action":"get_status"}"#),
-            "custom-pipe-name",
-        );
-        assert_eq!(
-            effects,
-            vec![PipeEffect::PipeOutput {
-                pipe_name: "custom-pipe-name".into(),
-                output: "🤖".into()
             }]
         );
     }
@@ -537,7 +473,6 @@ mod tests {
         handle_status(
             &mut map,
             &payload(r#"{"pane_id":"1","action":"get_status"}"#),
-            "tab-status",
         );
         assert_eq!(map.get(&1).unwrap().1, "🤖 Work");
     }
@@ -545,11 +480,7 @@ mod tests {
     #[test]
     fn get_name_does_not_mutate_cache() {
         let mut map = make_map(&[(1, 0, "🤖 Work")]);
-        handle_status(
-            &mut map,
-            &payload(r#"{"pane_id":"1","action":"get_name"}"#),
-            "tab-status",
-        );
+        handle_status(&mut map, &payload(r#"{"pane_id":"1","action":"get_name"}"#));
         assert_eq!(map.get(&1).unwrap().1, "🤖 Work");
     }
 
@@ -561,15 +492,10 @@ mod tests {
         handle_status(
             &mut map,
             &payload(r#"{"pane_id":"abc","action":"set_status","emoji":"🤖"}"#),
-            "tab-status",
         );
         assert_eq!(map, original, "cache must not change on invalid pane_id");
 
-        handle_status(
-            &mut map,
-            &payload(r#"{"pane_id":"1","action":"destroy"}"#),
-            "tab-status",
-        );
+        handle_status(&mut map, &payload(r#"{"pane_id":"1","action":"destroy"}"#));
         assert_eq!(map, original, "cache must not change on unknown action");
     }
 
@@ -581,7 +507,6 @@ mod tests {
         let effects = handle_status(
             &mut map,
             &payload(r#"{"pane_id":"1","action":"set_status"}"#),
-            "tab-status",
         );
         assert_eq!(effects, vec![]);
     }
@@ -589,15 +514,10 @@ mod tests {
     #[test]
     fn get_name_returns_full_name_when_no_status() {
         let mut map = make_map(&[(1, 0, "Work")]);
-        let effects = handle_status(
-            &mut map,
-            &payload(r#"{"pane_id":"1","action":"get_name"}"#),
-            "tab-status",
-        );
+        let effects = handle_status(&mut map, &payload(r#"{"pane_id":"1","action":"get_name"}"#));
         assert_eq!(
             effects,
             vec![PipeEffect::PipeOutput {
-                pipe_name: "tab-status".into(),
                 output: "Work".into()
             }]
         );

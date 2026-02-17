@@ -59,11 +59,9 @@ impl ZellijPlugin for State {
         };
 
         let effects = match pipe_message.name.as_str() {
-            "tab-status" => pipe_handler::handle_status(
-                &mut self.pane_to_tab,
-                &pipe_message.payload,
-                &pipe_message.name,
-            ),
+            "tab-status" => {
+                pipe_handler::handle_status(&mut self.pane_to_tab, &pipe_message.payload)
+            }
             _ => {
                 eprintln!(
                     "[tab-status] WARNING: unknown pipe name '{}', ignoring",
@@ -94,8 +92,13 @@ impl ZellijPlugin for State {
         } else {
             // Non-CLI source: fall back to rename_tab API (may fail on 0.43.x)
             for effect in effects {
-                if let PipeEffect::RenameTab { tab_id, name } = effect {
-                    rename_tab(tab_id, name);
+                match effect {
+                    PipeEffect::RenameTab { tab_id, name } => {
+                        rename_tab(tab_id, name);
+                    }
+                    PipeEffect::PipeOutput { .. } => {
+                        eprintln!("[tab-status] WARNING: PipeOutput ignored (non-CLI source)");
+                    }
                 }
             }
         }
@@ -110,7 +113,7 @@ impl State {
     fn rebuild_mapping(&mut self) {
         self.pane_to_tab.clear();
 
-        for (display_index, tab) in self.tabs.iter().enumerate() {
+        for tab in self.tabs.iter() {
             if let Some(pane_list) = self.panes.panes.get(&tab.position) {
                 for pane in pane_list {
                     // Skip plugin panes
@@ -121,11 +124,6 @@ impl State {
                     // Store tab.position (0-indexed) for pane-to-tab mapping
                     self.pane_to_tab
                         .insert(pane.id, (tab.position, tab.name.clone()));
-
-                    eprintln!(
-                        "[tab-status] Mapped pane {} -> tab position {} (display {}) '{}'",
-                        pane.id, tab.position, display_index, tab.name
-                    );
                 }
             }
         }

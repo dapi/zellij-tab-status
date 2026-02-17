@@ -18,11 +18,7 @@ Zellij plugin for managing tab status with emoji prefixes.
 
 ```bash
 # Download latest release
-curl -L https://github.com/dapi/zellij-tab-status/releases/latest/download/zellij_tab_status.wasm \
-  -o ~/.config/zellij/plugins/zellij-tab-status.wasm
-
-# Or specific version
-curl -L https://github.com/dapi/zellij-tab-status/releases/download/v0.1.0/zellij_tab_status.wasm \
+curl -L https://github.com/dapi/zellij-tab-status/releases/latest/download/zellij-tab-status.wasm \
   -o ~/.config/zellij/plugins/zellij-tab-status.wasm
 ```
 
@@ -79,7 +75,7 @@ zellij pipe --name tab-status -- '{"pane_id": "'$ZELLIJ_PANE_ID'", "action": "ge
 
 # Get installed plugin version
 zellij pipe --name tab-status -- '{"pane_id": "'$ZELLIJ_PANE_ID'", "action": "get_version"}'
-# Output: 0.3.1
+# Output: 0.4.0
 ```
 
 ## Status Emoji Examples
@@ -263,8 +259,11 @@ make install
 # Clean
 make clean
 
-# Run tests (in Zellij session)
-./test-plugin.sh
+# Run unit tests
+make test
+
+# Test in live Zellij session (after make install)
+make test-live
 ```
 
 ## License

@@ -60,11 +60,17 @@ zellij pipe --name tab-status -- "{\"pane_id\": \"$ZELLIJ_PANE_ID\", \"action\":
 sleep 0.5
 show_tabs
 
-# --- Test 7: legacy tab-rename ---
-echo "=== Test 7: legacy tab-rename ==="
-zellij pipe --name tab-rename -- "{\"pane_id\": \"$ZELLIJ_PANE_ID\", \"name\": \"Legacy-Test\"}"
+# --- Test 7: set_name ---
+echo "=== Test 7: set_name ==="
+zellij pipe --name tab-status -- "{\"pane_id\": \"$ZELLIJ_PANE_ID\", \"action\": \"set_name\", \"name\": \"Renamed-Tab\"}"
 sleep 0.5
 show_tabs
+
+# --- Test 8: get_version ---
+echo "=== Test 8: get_version ==="
+echo -n "Plugin version: "
+zellij pipe --name tab-status -- "{\"pane_id\": \"$ZELLIJ_PANE_ID\", \"action\": \"get_version\"}"
+echo ""
 
 # --- Cleanup ---
 echo "=== Cleanup: clear status ==="
