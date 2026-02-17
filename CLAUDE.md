@@ -44,8 +44,7 @@ zellij-tab-status/
 │   ├── pipe_handler.rs   # Pipe command handlers (pure logic + tests)
 │   └── status_utils.rs   # Unicode emoji/status extraction (+ tests)
 └── scripts/
-    ├── zellij-tab-status   # CLI: manage tab status emoji
-    └── zellij-rename-tab   # CLI: rename tab
+    └── zellij-tab-status   # CLI: manage tab status emoji
 ```
 
 ## Architecture

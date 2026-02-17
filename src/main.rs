@@ -76,7 +76,14 @@ impl ZellijPlugin for State {
         if let Some(ref pipe_id) = cli_pipe_id {
             for effect in effects {
                 match effect {
-                    PipeEffect::RenameTab { tab_id, name } => rename_tab(tab_id, name),
+                    // Workaround for zellij 0.43.x bug: rename_tab() plugin API uses
+                    // BTreeMap key lookup instead of position-based lookup (screen.rs:5070),
+                    // causing "Failed to find tab with index" when tabs have been closed.
+                    // Instead of calling rename_tab(), return the computed name to the CLI
+                    // caller which will do `zellij action rename-tab` (works correctly).
+                    PipeEffect::RenameTab { name, .. } => {
+                        cli_pipe_output(pipe_id, &name);
+                    }
                     PipeEffect::PipeOutput { output, .. } => {
                         cli_pipe_output(pipe_id, &output);
                     }
@@ -85,6 +92,7 @@ impl ZellijPlugin for State {
             // Unblock using CLI pipe ID so the response reaches the correct client
             unblock_cli_pipe_input(pipe_id);
         } else {
+            // Non-CLI source: fall back to rename_tab API (may fail on 0.43.x)
             for effect in effects {
                 if let PipeEffect::RenameTab { tab_id, name } = effect {
                     rename_tab(tab_id, name);
@@ -110,7 +118,7 @@ impl State {
                         continue;
                     }
 
-                    // Store tab.position (0-indexed); pipe_handler adds +1 for rename_tab API
+                    // Store tab.position (0-indexed) for pane-to-tab mapping
                     self.pane_to_tab
                         .insert(pane.id, (tab.position, tab.name.clone()));
 

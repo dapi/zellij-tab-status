@@ -87,6 +87,17 @@ send_to_plugin() {
     timeout 3s zellij pipe --plugin "$PLUGIN_PATH" --name tab-status -- "$payload" < /dev/null || true
 }
 
+# Send command to plugin and rename tab with the returned name.
+# Plugin computes the full name (with status emoji), returns it via pipe output,
+# then we do the actual rename via CLI (workaround for zellij 0.43.x rename_tab bug).
+rename_via_plugin() {
+    local new_name
+    new_name=$(send_to_plugin "$@")
+    if [[ -n "$new_name" ]]; then
+        timeout 3s zellij action rename-tab "$new_name" 2>/dev/null || true
+    fi
+}
+
 # Exit early if not in zellij
 check_zellij() {
     if [[ -z "${ZELLIJ:-}" ]]; then
@@ -111,7 +122,7 @@ case "${1:-}" in
         ;;
     -c|--clear)
         check_zellij
-        send_to_plugin "clear_status"
+        rename_via_plugin "clear_status"
         ;;
     -g|--get)
         check_zellij
@@ -127,7 +138,7 @@ case "${1:-}" in
             exit 1
         fi
         check_zellij
-        send_to_plugin "set_name" "name" "$2"
+        rename_via_plugin "set_name" "name" "$2"
         ;;
     -v|--version)
         # Extract version from installed wasm binary (no plugin query needed)
@@ -148,6 +159,6 @@ case "${1:-}" in
     *)
         # Assume it's an emoji to set
         check_zellij
-        send_to_plugin "set_status" "emoji" "$1"
+        rename_via_plugin "set_status" "emoji" "$1"
         ;;
 esac

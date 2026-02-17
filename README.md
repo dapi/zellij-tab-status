@@ -105,8 +105,7 @@ Ready-to-use wrapper scripts are included in `scripts/`:
 ```bash
 # Copy to ~/.local/bin (or anywhere in PATH)
 cp scripts/zellij-tab-status ~/.local/bin/
-cp scripts/zellij-rename-tab ~/.local/bin/
-chmod +x ~/.local/bin/zellij-tab-status ~/.local/bin/zellij-rename-tab
+chmod +x ~/.local/bin/zellij-tab-status
 ```
 
 ### Usage
@@ -119,8 +118,6 @@ zellij-tab-status              # Get current emoji
 zellij-tab-status --name       # Get base name
 zellij-tab-status -s "Code"   # Rename tab (preserving emoji)
 zellij-tab-status --version    # Get plugin version
-
-zellij-rename-tab "New Name"   # Rename tab (preserving emoji)
 ```
 
 ### Shell aliases (optional)
