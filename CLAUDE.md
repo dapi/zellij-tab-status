@@ -92,6 +92,29 @@ For integration tests in Docker, the plugin IS pre-loaded via `load_plugins` in 
 - `pane_to_tab: PaneTabMap` (alias for `BTreeMap<u32, (usize, String)>`) — maps pane_id to (tab_position, tab_name)
 - Rebuilt on every `TabUpdate` or `PaneUpdate` event
 - Tab position is 0-indexed internally (from `TabInfo.position`), converted to 1-indexed `tab_id` in `pipe_handler.rs` for the `rename_tab()` API
+- `pending_renames: BTreeMap<usize, String>` — protects against `rebuild_mapping` overwriting inline cache updates with stale tab names before `TabUpdate` confirms a rename
+- `tab_indices: Vec<u32>` — maps tab position → persistent Zellij tab index (workaround for Zellij bug #3535)
+- `next_tab_index: u32` — counter for assigning indices to newly created tabs
+
+### Zellij Bug #3535: rename_tab uses persistent tab index
+
+**CRITICAL**: `rename_tab(tab_position, name)` in `zellij-tile` shim is named misleadingly.
+The Zellij server treats the value as a **persistent internal tab index**, NOT a position.
+
+- Issue: https://github.com/zellij-org/zellij/issues/3535
+- Fix PR (NOT merged as of Zellij 0.43.1): https://github.com/zellij-org/zellij/pull/4179
+
+**Behavior:**
+- Tab indices are 1-indexed, assigned sequentially at creation (1, 2, 3, ...)
+- Indices are NEVER reassigned after deletion. Deleting tab index 1 leaves [2, 3, ...]
+- `TabInfo.position` IS re-indexed after deletion (0, 1, 2, ...) — so `position + 1 != index` after any deletion
+
+**Workaround in our plugin:**
+- `tab_indices: Vec<u32>` tracks the persistent index for each tab position
+- On `TabUpdate`, diff old vs new tab lists (by name) to detect additions/deletions
+- When calling `rename_tab()`, use `tab_indices[position]` instead of `position + 1`
+- pipe_handler.rs still computes `tab_id = position + 1` (pure logic, unaware of bug)
+- main.rs applies correction: `actual_index = self.get_tab_index(tab_position)`
 
 ### Unicode Handling
 
@@ -120,7 +143,7 @@ Uses `unicode-segmentation` for proper emoji handling:
 # Unit tests (39 tests in pipe_handler + status_utils, no WASM runtime needed):
 cargo test --lib
 
-# Integration tests (12 tests, Docker required, runs headless Zellij):
+# Integration tests (34 assertions in 10 tests, Docker required, runs headless Zellij):
 make test-integration
 
 # In Zellij session (after make install + restart):
@@ -137,7 +160,7 @@ tail -f /tmp/zellij-1000/zellij-log/zellij.log | grep tab-status
 2. `docker build -f Dockerfile.test` — Ubuntu + Zellij image
 3. `docker run` with mounted .wasm + scripts:
    - `docker-test-runner.sh` creates Zellij config + permissions, starts headless session via `script` (PTY), discovers pane ID, runs tests
-   - `integration-test.sh` executes 12 test cases via `zellij pipe`
+   - `integration-test.sh` executes 10 test groups (34 assertions) via `zellij pipe`
 
 Key details for Docker testing:
 - Zellij needs PTY: `script -qfc "zellij ..." /dev/null > /dev/null 2>&1 &`

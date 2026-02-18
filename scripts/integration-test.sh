@@ -14,7 +14,6 @@ PLUGIN_PATH="${PLUGIN_PATH:-}"
 PASS=0
 FAIL=0
 PANE_ID="$ZELLIJ_PANE_ID"
-CREATED_TAB=false
 
 # --- Helpers ---
 
@@ -52,16 +51,119 @@ assert_contains() {
     fi
 }
 
-cleanup() {
-    # Remove status from test tab
-    pipe_cmd "{\"pane_id\":\"$PANE_ID\",\"action\":\"clear_status\"}" 2>/dev/null || true
-    # Close second tab if created
-    if $CREATED_TAB; then
-        zellij action go-to-tab 2 2>/dev/null || true
+discover_pane_id() {
+    local tmp_file="/tmp/pane_id_discover_$$"
+    zellij action write-chars "echo \$ZELLIJ_PANE_ID > $tmp_file"
+    zellij action write 13
+    sleep 1
+    local result
+    result=$(cat "$tmp_file" 2>/dev/null | tr -d '[:space:]')
+    rm -f "$tmp_file" 2>/dev/null
+    echo "$result"
+}
+
+# Polling helpers: wait for expected state instead of fixed sleep
+
+wait_for_name() {
+    local pane_id="$1" expected="$2" msg="$3" timeout=10
+    local actual start_time
+    start_time=$(date +%s)
+    while true; do
+        actual=$(pipe_cmd "{\"pane_id\":\"$pane_id\",\"action\":\"get_name\"}" 2>/dev/null) || true
+        if [[ "$actual" == "$expected" ]]; then
+            echo "  PASS: $msg"
+            ((PASS++)) || true
+            return 0
+        fi
+        if [[ $(( $(date +%s) - start_time )) -ge $timeout ]]; then
+            echo "  FAIL: $msg (timeout ${timeout}s)"
+            echo "    expected: '$expected'"
+            echo "    actual:   '$actual'"
+            ((FAIL++)) || true
+            return 1
+        fi
+        sleep 0.3
+    done
+}
+
+wait_for_status() {
+    local pane_id="$1" expected="$2" msg="$3" timeout=10
+    local actual start_time
+    start_time=$(date +%s)
+    while true; do
+        actual=$(pipe_cmd "{\"pane_id\":\"$pane_id\",\"action\":\"get_status\"}" 2>/dev/null) || true
+        if [[ "$actual" == "$expected" ]]; then
+            echo "  PASS: $msg"
+            ((PASS++)) || true
+            return 0
+        fi
+        if [[ $(( $(date +%s) - start_time )) -ge $timeout ]]; then
+            echo "  FAIL: $msg (timeout ${timeout}s)"
+            echo "    expected: '$expected'"
+            echo "    actual:   '$actual'"
+            ((FAIL++)) || true
+            return 1
+        fi
+        sleep 0.3
+    done
+}
+
+wait_for_tab_contains() {
+    local needle="$1" msg="$2" timeout=10
+    local actual start_time
+    start_time=$(date +%s)
+    while true; do
+        actual=$(zellij action query-tab-names 2>/dev/null) || true
+        if [[ "$actual" == *"$needle"* ]]; then
+            echo "  PASS: $msg"
+            ((PASS++)) || true
+            return 0
+        fi
+        if [[ $(( $(date +%s) - start_time )) -ge $timeout ]]; then
+            echo "  FAIL: $msg (timeout ${timeout}s)"
+            echo "    expected to contain: '$needle'"
+            echo "    actual: '$actual'"
+            ((FAIL++)) || true
+            return 1
+        fi
+        sleep 0.3
+    done
+}
+
+wait_for_tab_count() {
+    local expected="$1" timeout=10
+    local actual start_time
+    start_time=$(date +%s)
+    while true; do
+        actual=$(zellij action query-tab-names 2>/dev/null | wc -l)
+        if [[ "$actual" -eq "$expected" ]]; then
+            return 0
+        fi
+        if [[ $(( $(date +%s) - start_time )) -ge $timeout ]]; then
+            echo "  WARNING: tab count timeout (expected $expected, got $actual)"
+            return 1
+        fi
+        sleep 0.3
+    done
+}
+
+close_extra_tabs() {
+    local tab_count
+    tab_count=$(zellij action query-tab-names 2>/dev/null | wc -l)
+    while [[ "$tab_count" -gt 1 ]]; do
+        zellij action go-to-tab "$tab_count" 2>/dev/null || true
         sleep 0.2
         zellij action close-tab 2>/dev/null || true
-        sleep 0.2
-    fi
+        sleep 0.5
+        tab_count=$(zellij action query-tab-names 2>/dev/null | wc -l)
+    done
+    zellij action go-to-tab 1 2>/dev/null || true
+    sleep 0.3
+}
+
+cleanup() {
+    pipe_cmd "{\"pane_id\":\"$PANE_ID\",\"action\":\"clear_status\"}" 2>/dev/null || true
+    close_extra_tabs
 }
 trap cleanup EXIT
 
@@ -132,7 +234,6 @@ sleep 0.3
 
 # Create a second tab — focus moves there, but our pane stays in TabA
 zellij action new-tab --name "TabB"
-CREATED_TAB=true
 sleep 1
 
 # Go back to our tab
@@ -166,6 +267,104 @@ else
     echo "  FAIL: get_version returned unexpected: '$result'"
     ((FAIL++)) || true
 fi
+
+# --- Test 10: Multi-tab lifecycle (create, verify, delete, re-create) ---
+echo "--- 10. Multi-tab lifecycle ---"
+
+# Phase 1: Setup 3 tabs
+echo "  Phase 1: Setup 3 tabs"
+close_extra_tabs
+
+# Tab1 already exists, rename to Alpha
+pipe_cmd "{\"pane_id\":\"$PANE_ID\",\"action\":\"clear_status\"}"
+pipe_cmd "{\"pane_id\":\"$PANE_ID\",\"action\":\"set_name\",\"name\":\"Alpha\"}"
+wait_for_name "$PANE_ID" "Alpha" "tab1 renamed to Alpha"
+
+# Create tab2 (Beta)
+zellij action new-tab
+wait_for_tab_count 2
+PANE_ID_2=$(discover_pane_id)
+echo "  Discovered PANE_ID_2=$PANE_ID_2"
+pipe_cmd "{\"pane_id\":\"$PANE_ID_2\",\"action\":\"set_name\",\"name\":\"Beta\"}"
+wait_for_name "$PANE_ID_2" "Beta" "tab2 renamed to Beta"
+
+# Create tab3 (Gamma)
+zellij action new-tab
+wait_for_tab_count 3
+PANE_ID_3=$(discover_pane_id)
+echo "  Discovered PANE_ID_3=$PANE_ID_3"
+pipe_cmd "{\"pane_id\":\"$PANE_ID_3\",\"action\":\"set_name\",\"name\":\"Gamma\"}"
+wait_for_name "$PANE_ID_3" "Gamma" "tab3 renamed to Gamma"
+
+# Phase 2: Extra pane in tab1
+echo "  Phase 2: Extra pane in tab1"
+zellij action go-to-tab 1
+sleep 0.3
+zellij action new-pane
+sleep 1
+PANE_ID_1B=$(discover_pane_id)
+echo "  Discovered PANE_ID_1B=$PANE_ID_1B"
+wait_for_name "$PANE_ID_1B" "Alpha" "second pane in tab1 also returns Alpha"
+
+# Phase 3: Verify all 3 tabs
+echo "  Phase 3: Verify all 3 tabs"
+result=$(pipe_cmd "{\"pane_id\":\"$PANE_ID\",\"action\":\"get_name\"}")
+assert_eq "$result" "Alpha" "tab1 pane1 is Alpha"
+
+result=$(pipe_cmd "{\"pane_id\":\"$PANE_ID_2\",\"action\":\"get_name\"}")
+assert_eq "$result" "Beta" "tab2 is Beta"
+
+result=$(pipe_cmd "{\"pane_id\":\"$PANE_ID_3\",\"action\":\"get_name\"}")
+assert_eq "$result" "Gamma" "tab3 is Gamma"
+
+pipe_cmd "{\"pane_id\":\"$PANE_ID_2\",\"action\":\"set_status\",\"emoji\":\"🟢\"}"
+wait_for_status "$PANE_ID_2" "🟢" "Beta has green status"
+wait_for_tab_contains "🟢 Beta" "query-tab-names has 🟢 Beta"
+
+tab_names=$(zellij action query-tab-names)
+assert_contains "$tab_names" "Alpha" "query-tab-names has Alpha"
+assert_contains "$tab_names" "Gamma" "query-tab-names has Gamma"
+
+# Phase 4: Delete tab1
+echo "  Phase 4: Delete tab1 (Alpha)"
+zellij action go-to-tab 1
+sleep 0.3
+zellij action close-tab
+wait_for_tab_count 2
+
+# Phase 5: Verify remaining 2 tabs after deletion
+echo "  Phase 5: Verify after tab1 deletion"
+wait_for_name "$PANE_ID_2" "Beta" "Beta still accessible after tab1 deleted"
+wait_for_name "$PANE_ID_3" "Gamma" "Gamma still accessible after tab1 deleted"
+wait_for_status "$PANE_ID_2" "🟢" "Beta status preserved after tab1 deleted"
+
+pipe_cmd "{\"pane_id\":\"$PANE_ID_3\",\"action\":\"set_name\",\"name\":\"GammaNew\"}"
+wait_for_name "$PANE_ID_3" "GammaNew" "Gamma renamed to GammaNew"
+
+# Phase 6: Create new tab (Delta)
+echo "  Phase 6: Create new tab (Delta)"
+zellij action new-tab
+wait_for_tab_count 3
+PANE_ID_4=$(discover_pane_id)
+echo "  Discovered PANE_ID_4=$PANE_ID_4"
+pipe_cmd "{\"pane_id\":\"$PANE_ID_4\",\"action\":\"set_name\",\"name\":\"Delta\"}"
+wait_for_name "$PANE_ID_4" "Delta" "new tab renamed to Delta"
+
+# Phase 7: Final verification of all 3 tabs
+echo "  Phase 7: Final verification"
+result=$(pipe_cmd "{\"pane_id\":\"$PANE_ID_2\",\"action\":\"get_name\"}")
+assert_eq "$result" "Beta" "Beta still correct after new tab"
+
+result=$(pipe_cmd "{\"pane_id\":\"$PANE_ID_3\",\"action\":\"get_name\"}")
+assert_eq "$result" "GammaNew" "GammaNew still correct after new tab"
+
+result=$(pipe_cmd "{\"pane_id\":\"$PANE_ID_4\",\"action\":\"get_name\"}")
+assert_eq "$result" "Delta" "Delta accessible"
+
+pipe_cmd "{\"pane_id\":\"$PANE_ID_4\",\"action\":\"set_status\",\"emoji\":\"🔵\"}"
+wait_for_tab_contains "🟢 Beta" "final: 🟢 Beta present"
+wait_for_tab_contains "GammaNew" "final: GammaNew present"
+wait_for_tab_contains "🔵 Delta" "final: 🔵 Delta present"
 
 # --- Summary ---
 echo ""
