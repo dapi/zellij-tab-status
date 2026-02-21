@@ -85,6 +85,10 @@ Note: `get_version` does not require `pane_id`.
 
 The plugin is loaded **on-demand** via `zellij pipe --plugin "file:path.wasm"`. Do NOT add it to `load_plugins` in config.kdl — this creates duplicate instances when CLI also uses `--plugin`.
 
+**CRITICAL: Never use `--plugin` and `--name` together in `zellij pipe`.** Zellij routes the message via both paths independently, causing the plugin to receive it **twice** (double output, double side effects). Use only one:
+- `--plugin "file:path.wasm"` — targets a specific plugin (auto-loads if needed). Used by the CLI script.
+- `--name tab-status` — broadcasts to all plugins with that name. Used by integration tests in Docker where the plugin is pre-loaded via `load_plugins`.
+
 For integration tests in Docker, the plugin IS pre-loaded via `load_plugins` in a test-specific config, and pipe commands use `--name` only (no `--plugin`).
 
 ### State Management

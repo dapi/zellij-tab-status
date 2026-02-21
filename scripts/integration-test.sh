@@ -19,7 +19,7 @@ PANE_ID="$ZELLIJ_PANE_ID"
 
 pipe_cmd() {
     if [[ -n "${PLUGIN_PATH:-}" ]]; then
-        timeout 10s zellij pipe --plugin "$PLUGIN_PATH" --name tab-status -- "$1" < /dev/null
+        timeout 10s zellij pipe --plugin "$PLUGIN_PATH" -- "$1" < /dev/null
     else
         timeout 10s zellij pipe --name tab-status -- "$1" < /dev/null
     fi

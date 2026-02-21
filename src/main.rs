@@ -87,18 +87,8 @@ impl ZellijPlugin for State {
             _ => None,
         };
 
-        let effects = match pipe_message.name.as_str() {
-            "tab-status" => {
-                pipe_handler::handle_status(&mut self.pane_to_tab, &pipe_message.payload)
-            }
-            _ => {
-                eprintln!(
-                    "[tab-status] WARNING: unknown pipe name '{}', ignoring",
-                    pipe_message.name
-                );
-                vec![]
-            }
-        };
+        let effects =
+            pipe_handler::handle_status(&mut self.pane_to_tab, &pipe_message.payload);
 
         for effect in &effects {
             match effect {
