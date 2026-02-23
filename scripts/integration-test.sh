@@ -685,6 +685,29 @@ assert_not_contains "$tab_names" "🆕 C" "C does not have 🆕"
 assert_contains "$tab_names" "A" "A is unchanged"
 assert_contains "$tab_names" "C" "C is unchanged"
 
+# --- Test 20: get_debug shows correct tab_indices ---
+echo "--- 20. get_debug tab_indices ---"
+close_extra_tabs
+PANE_ID=$(discover_pane_id)
+
+pipe_cmd "{\"pane_id\":\"$PANE_ID\",\"action\":\"set_name\",\"name\":\"DbgTab\"}"
+pipe_cmd "{\"pane_id\":\"$PANE_ID\",\"action\":\"clear_status\"}"
+wait_for_name "$PANE_ID" "DbgTab" "tab named DbgTab"
+
+# Create second tab
+zellij action new-tab
+wait_for_tab_count 2
+PANE_DBG2=$(discover_pane_id)
+pipe_cmd "{\"pane_id\":\"$PANE_DBG2\",\"action\":\"set_name\",\"name\":\"DbgTab2\"}"
+wait_for_name "$PANE_DBG2" "DbgTab2" "tab2 named DbgTab2"
+
+# get_debug should return JSON with tab_indices
+debug_result=$(pipe_cmd "{\"action\":\"get_debug\"}")
+echo "  Debug output: $debug_result"
+assert_contains "$debug_result" "tab_indices" "get_debug returns tab_indices"
+assert_contains "$debug_result" "next_tab_index" "get_debug returns next_tab_index"
+assert_contains "$debug_result" "pane_tab_index" "get_debug returns pane_tab_index"
+
 # --- Summary ---
 echo ""
 echo "==============================="
