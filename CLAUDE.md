@@ -64,7 +64,7 @@ zellij-tab-status/
 Plugin uses `zellij-tile` crate:
 - `register_plugin!(State)` — registers plugin state
 - `ZellijPlugin` trait — lifecycle hooks (load, update, pipe, render)
-- `Event::TabUpdate`, `Event::PaneUpdate` — track tab/pane state
+- `Event::TabUpdate`, `Event::PaneUpdate`, `Event::Timer` — track tab/pane state and probing timeouts
 - `PipeMessage` — receive commands from CLI
 
 ### Pipe Commands
@@ -78,9 +78,10 @@ All commands go through `tab-status` pipe:
 {"pane_id": "123", "action": "set_name", "name": "New Name"}
 {"action": "get_version"}
 {"action": "get_debug"}
+{"action": "probe_indices"}
 ```
 
-Note: `get_version` and `get_debug` do not require `pane_id`. `get_debug` returns JSON with `tab_indices`, `next_tab_index`, `pane_tab_index`, `pane_to_tab_count` — handled in main.rs before pipe_handler.
+Note: `get_version`, `get_debug`, and `probe_indices` do not require `pane_id`. `get_debug` returns JSON with `phase`, `tab_indices`, `next_tab_index`, `pane_tab_index`, `pane_to_tab_count`. `probe_indices` re-triggers index probing (for diagnostics after suspected desync).
 
 ### Plugin Loading
 
@@ -99,6 +100,16 @@ For integration tests in Docker, the plugin IS pre-loaded via `load_plugins` in 
 - `tab_indices: Vec<u32>` — maps tab position → persistent Zellij tab index (workaround for Zellij bug #3535)
 - `next_tab_index: u32` — counter for assigning indices to newly created tabs
 - `pane_tab_index: HashMap<u32, u32>` — maps pane_id → persistent tab_index. Pane IDs are stable anchors for identifying tabs across structural changes (deletions/creations)
+- `phase: Phase` — plugin phase: `Probing(ProbingState)` or `Ready`. During probing, plugin sequentially calls `rename_tab(candidate, "⍟")` to discover real persistent indices. Pipe commands (except get_version, get_debug, probe_indices) are blocked during probing.
+
+### Index Probing
+
+At startup (first `TabUpdate`), the plugin enters `Phase::Probing` to discover real persistent tab indices via sequential `rename_tab(candidate, "⍟")` probes:
+- If a tab gets renamed to `⍟` → found at that position, restore original name, advance
+- If no `TabUpdate` arrives within 1s → gap (deleted index), detected via `Event::Timer`, advance
+- After all tabs found → `Phase::Ready`, tab_indices set correctly
+
+The `probe_indices` command re-triggers this process for diagnostics. Design doc: `docs/plans/2026-02-23-index-probing-design.md`.
 
 ### Zellij Bug #3535: rename_tab uses persistent tab index
 
@@ -120,7 +131,7 @@ The Zellij server treats the value as a **persistent internal tab index**, NOT a
 2. **main.rs: get_tab_index(position)** — converts position → persistent index via `tab_indices[position]`. Called when executing `RenameTab` effects. This is the ONLY place where position→index conversion happens.
 
 3. **main.rs: update_tab_indices()** — maintains the `tab_indices` vector using pane-ID anchors:
-   - On first `TabUpdate`: assumes `[1..=N]`
+   - On first `TabUpdate`: starts probing to discover real indices (see Index Probing above)
    - On structural change (tab count changed): looks up surviving panes via `pane_tab_index` (pane_id → index). Panes found in `pane_tab_index` with a valid current index keep their old index; unknown panes get `next_tab_index++`
    - Filters stale entries: only trusts `pane_tab_index` values present in current `tab_indices` (prevents reused pane IDs from mapping to deleted tab indices)
 
@@ -153,7 +164,7 @@ Uses `unicode-segmentation` for proper emoji handling:
 # Unit tests (39 tests in pipe_handler + status_utils, no WASM runtime needed):
 cargo test --lib
 
-# Integration tests (101 assertions in 19 tests, Docker required, runs headless Zellij):
+# Integration tests (121 assertions in 22 tests, Docker required, runs headless Zellij):
 make test-integration
 
 # In Zellij session (after make install + restart):
