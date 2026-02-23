@@ -83,7 +83,38 @@ impl ZellijPlugin for State {
         match event {
             Event::TabUpdate(tabs) => {
                 eprintln!("[tab-status] TabUpdate: {} tabs", tabs.len());
-                // Track persistent tab indices (workaround for Zellij #3535)
+
+                // Handle probing FSM before normal processing
+                if let Phase::Probing(ref mut state) = self.phase {
+                    let result = Self::handle_probing(&tabs, state);
+                    match result {
+                        ProbingResult::Continue => {
+                            self.tabs = tabs;
+                            self.rebuild_mapping();
+                            return false;
+                        }
+                        ProbingResult::Complete(tab_indices) => {
+                            eprintln!(
+                                "[tab-status] Probing complete! tab_indices={:?}",
+                                tab_indices
+                            );
+                            self.tab_indices = tab_indices;
+                            self.next_tab_index =
+                                self.tab_indices.iter().max().copied().unwrap_or(0) + 1;
+                            self.phase = Phase::Ready;
+                            self.tabs = tabs;
+                            self.sync_pane_tab_index();
+                            self.rebuild_mapping();
+                            eprintln!(
+                                "[tab-status] Tab indices after probing: {:?} (next={})",
+                                self.tab_indices, self.next_tab_index
+                            );
+                            return false;
+                        }
+                    }
+                }
+
+                // Normal TabUpdate processing (Phase::Ready)
                 self.update_tab_indices(&tabs);
                 // Confirm pending renames that Zellij has applied
                 self.pending_renames.retain(|pos, pending_name| {
@@ -179,6 +210,11 @@ impl ZellijPlugin for State {
     fn render(&mut self, _rows: usize, _cols: usize) {}
 }
 
+enum ProbingResult {
+    Continue,
+    Complete(Vec<u32>),
+}
+
 impl State {
     /// Track persistent tab indices across TabUpdate events.
     /// Uses pane IDs as stable anchors instead of name-based diff.
@@ -251,6 +287,94 @@ impl State {
             "[tab-status] Tab indices updated: {:?} (next={})",
             self.tab_indices, self.next_tab_index
         );
+    }
+
+    /// Handle one step of the probing FSM.
+    fn handle_probing(tabs: &[TabInfo], state: &mut ProbingState) -> ProbingResult {
+        if state.restoring {
+            // Waiting for name restoration — check that marker is gone
+            let marker_gone = !tabs.iter().any(|t| t.name == PROBE_MARKER);
+            if !marker_gone {
+                eprintln!("[tab-status] Probing: still waiting for restore");
+                return ProbingResult::Continue;
+            }
+
+            eprintln!(
+                "[tab-status] Probing: restore confirmed, candidate was {}",
+                state.candidate
+            );
+            state.restoring = false;
+            state.candidate += 1;
+
+            if state.remaining == 0 {
+                // All tabs found
+                state.found.sort_by_key(|(pos, _)| *pos);
+                let tab_indices: Vec<u32> = state.found.iter().map(|(_, idx)| *idx).collect();
+                return ProbingResult::Complete(tab_indices);
+            }
+
+            // Probe next candidate
+            rename_tab(state.candidate, PROBE_MARKER);
+            eprintln!(
+                "[tab-status] Probing: sent probe candidate={}",
+                state.candidate
+            );
+            return ProbingResult::Continue;
+        }
+
+        // Looking for marker
+        let marker_pos = tabs.iter().position(|t| t.name == PROBE_MARKER);
+
+        match marker_pos {
+            Some(pos) => {
+                // Found! Record mapping and restore original name
+                eprintln!(
+                    "[tab-status] Probing: found candidate={} at position={}",
+                    state.candidate, pos
+                );
+                state.found.push((pos, state.candidate));
+                state.remaining -= 1;
+
+                let original = &state.original_names[pos];
+                eprintln!(
+                    "[tab-status] Probing: restoring name '{}' at index={}",
+                    original, state.candidate
+                );
+                rename_tab(state.candidate, original);
+                state.restoring = true;
+
+                ProbingResult::Continue
+            }
+            None => {
+                // Not found — this index was deleted (gap)
+                eprintln!(
+                    "[tab-status] Probing: candidate={} is a gap (deleted index)",
+                    state.candidate
+                );
+                state.candidate += 1;
+
+                // Safety: prevent infinite loop
+                let max_candidate = state.original_names.len() as u32 * 3;
+                if state.candidate > max_candidate && state.remaining > 0 {
+                    eprintln!(
+                        "[tab-status] WARNING: probing exceeded limit (candidate={}), falling back to [1..N]",
+                        state.candidate
+                    );
+                    let n = state.original_names.len();
+                    let fallback: Vec<u32> = (1..=n as u32).collect();
+                    return ProbingResult::Complete(fallback);
+                }
+
+                // Probe next candidate
+                rename_tab(state.candidate, PROBE_MARKER);
+                eprintln!(
+                    "[tab-status] Probing: sent probe candidate={}",
+                    state.candidate
+                );
+
+                ProbingResult::Continue
+            }
+        }
     }
 
     /// Rebuild pane_id -> persistent tab_index mapping from current tab_indices + PaneManifest.
