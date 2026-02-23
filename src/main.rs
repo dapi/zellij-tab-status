@@ -76,7 +76,11 @@ impl ZellijPlugin for State {
             PermissionType::ChangeApplicationState,
             PermissionType::ReadCliPipes,
         ]);
-        subscribe(&[EventType::TabUpdate, EventType::PaneUpdate, EventType::Timer]);
+        subscribe(&[
+            EventType::TabUpdate,
+            EventType::PaneUpdate,
+            EventType::Timer,
+        ]);
     }
 
     fn update(&mut self, event: Event) -> bool {
@@ -273,8 +277,7 @@ impl ZellijPlugin for State {
             }
         }
 
-        let effects =
-            pipe_handler::handle_status(&mut self.pane_to_tab, &pipe_message.payload);
+        let effects = pipe_handler::handle_status(&mut self.pane_to_tab, &pipe_message.payload);
 
         for effect in &effects {
             match effect {
@@ -356,15 +359,12 @@ impl State {
         let mut new_indices = Vec::with_capacity(new_count);
         for pos in 0..new_count {
             let known = self.panes.panes.get(&pos).and_then(|panes| {
-                panes
-                    .iter()
-                    .filter(|p| !p.is_plugin)
-                    .find_map(|p| {
-                        self.pane_tab_index
-                            .get(&p.id)
-                            .copied()
-                            .filter(|idx| self.tab_indices.contains(idx))
-                    })
+                panes.iter().filter(|p| !p.is_plugin).find_map(|p| {
+                    self.pane_tab_index
+                        .get(&p.id)
+                        .copied()
+                        .filter(|idx| self.tab_indices.contains(idx))
+                })
             });
             match known {
                 Some(idx) => new_indices.push(idx),
