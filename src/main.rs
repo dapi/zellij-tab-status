@@ -6,9 +6,10 @@ use zellij_tab_status::pipe_handler::{self, PaneTabMap, PipeEffect, StatusPayloa
 /// Probing marker: APL star diaeresis (monochrome, not used as regular status)
 const PROBE_MARKER: &str = "\u{235F}";
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 enum Phase {
     Probing(ProbingState),
+    #[default]
     Ready,
 }
 
@@ -24,12 +25,6 @@ struct ProbingState {
     remaining: usize,
     /// true = waiting for name restoration after marker was found
     restoring: bool,
-}
-
-impl Default for Phase {
-    fn default() -> Self {
-        Phase::Ready
-    }
 }
 
 #[derive(Default)]
@@ -204,7 +199,7 @@ impl ZellijPlugin for State {
         // Allow get_version and get_debug during probing, block everything else
         let is_probing = matches!(self.phase, Phase::Probing(_));
         if is_probing {
-            let is_allowed = pipe_message.payload.as_ref().map_or(false, |p| {
+            let is_allowed = pipe_message.payload.as_ref().is_some_and(|p| {
                 serde_json::from_str::<StatusPayload>(p)
                     .map(|s| {
                         s.action == "get_version"
