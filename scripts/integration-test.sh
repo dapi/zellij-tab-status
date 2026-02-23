@@ -174,6 +174,25 @@ close_extra_tabs() {
     sleep 0.3
 }
 
+wait_for_ready() {
+    local timeout=15
+    local start_time
+    start_time=$(date +%s)
+    while true; do
+        local debug
+        debug=$(pipe_cmd "{\"action\":\"get_debug\"}" 2>/dev/null) || true
+        if [[ "$debug" == *'"phase":"ready"'* ]]; then
+            echo "  Plugin ready (probing complete)"
+            return 0
+        fi
+        if [[ $(( $(date +%s) - start_time )) -ge $timeout ]]; then
+            echo "  WARNING: plugin not ready after ${timeout}s, continuing anyway"
+            return 1
+        fi
+        sleep 0.5
+    done
+}
+
 cleanup() {
     pipe_cmd "{\"pane_id\":\"$PANE_ID\",\"action\":\"clear_status\"}" 2>/dev/null || true
     close_extra_tabs
@@ -185,6 +204,9 @@ trap cleanup EXIT
 echo "=== zellij-tab-status Integration Tests ==="
 echo "Pane ID: $PANE_ID"
 echo ""
+
+# Wait for probing phase to complete before running tests
+wait_for_ready
 
 pipe_cmd "{\"pane_id\":\"$PANE_ID\",\"action\":\"set_name\",\"name\":\"TestTab\"}"
 sleep 0.5
@@ -729,7 +751,7 @@ result=$(pipe_cmd "{\"action\":\"probe_indices\"}")
 assert_eq "$result" "probing started" "probe_indices returns 'probing started'"
 
 # Wait for probing to complete — names should be restored
-sleep 3
+wait_for_ready
 wait_for_name "$PANE_ID" "ProbeTab" "tab1 name restored after probing"
 wait_for_name "$PANE_PROBE2" "ProbeTab2" "tab2 name restored after probing"
 
@@ -776,7 +798,7 @@ result=$(pipe_cmd "{\"action\":\"probe_indices\"}")
 assert_eq "$result" "probing started" "probe_indices started"
 
 # Wait for probing to complete
-sleep 5
+wait_for_ready
 
 # Names should be restored
 wait_for_name "$PANE_ID" "G1" "G1 name restored after gap probing"

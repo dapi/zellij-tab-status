@@ -76,7 +76,7 @@ impl ZellijPlugin for State {
             PermissionType::ChangeApplicationState,
             PermissionType::ReadCliPipes,
         ]);
-        subscribe(&[EventType::TabUpdate, EventType::PaneUpdate]);
+        subscribe(&[EventType::TabUpdate, EventType::PaneUpdate, EventType::Timer]);
     }
 
     fn update(&mut self, event: Event) -> bool {
@@ -141,6 +141,45 @@ impl ZellijPlugin for State {
                 // update_tab_indices() where tab_indices are always correct.
                 self.rebuild_mapping();
             }
+            Event::Timer(_) => {
+                // Timer fires during probing to detect gaps (non-existent indices).
+                // If rename_tab targets a deleted index, Zellij silently ignores it
+                // and sends no TabUpdate. The timer catches this.
+                if let Phase::Probing(ref mut state) = self.phase {
+                    if !state.restoring {
+                        eprintln!(
+                            "[tab-status] Probing: timer fired, candidate={} is a gap (no TabUpdate received)",
+                            state.candidate
+                        );
+                        state.candidate += 1;
+
+                        // Safety: prevent infinite loop
+                        let max_candidate = state.original_names.len() as u32 * 3;
+                        if state.candidate > max_candidate && state.remaining > 0 {
+                            eprintln!(
+                                "[tab-status] WARNING: probing exceeded limit (candidate={}), falling back to [1..N]",
+                                state.candidate
+                            );
+                            let n = state.original_names.len();
+                            let fallback: Vec<u32> = (1..=n as u32).collect();
+                            self.tab_indices = fallback;
+                            self.next_tab_index =
+                                self.tab_indices.iter().max().copied().unwrap_or(0) + 1;
+                            self.phase = Phase::Ready;
+                            self.sync_pane_tab_index();
+                            self.rebuild_mapping();
+                            return false;
+                        }
+
+                        rename_tab(state.candidate, PROBE_MARKER);
+                        set_timeout(1.0);
+                        eprintln!(
+                            "[tab-status] Probing: sent probe candidate={} (after gap)",
+                            state.candidate
+                        );
+                    }
+                }
+            }
             _ => {}
         }
         false
@@ -184,7 +223,12 @@ impl ZellijPlugin for State {
         if let Some(ref payload) = pipe_message.payload {
             if let Ok(status) = serde_json::from_str::<StatusPayload>(payload) {
                 if status.action == "get_debug" {
+                    let phase_str = match &self.phase {
+                        Phase::Probing(_) => "probing",
+                        Phase::Ready => "ready",
+                    };
                     let debug_info = serde_json::json!({
+                        "phase": phase_str,
                         "tab_indices": self.tab_indices,
                         "next_tab_index": self.next_tab_index,
                         "pane_tab_index": self.pane_tab_index,
@@ -219,6 +263,7 @@ impl ZellijPlugin for State {
                         restoring: false,
                     });
                     rename_tab(1, PROBE_MARKER);
+                    set_timeout(1.0);
                     if let Some(ref pipe_id) = cli_pipe_id {
                         cli_pipe_output(pipe_id, "probing started");
                         unblock_cli_pipe_input(pipe_id);
@@ -293,8 +338,9 @@ impl State {
                 restoring: false,
             });
 
-            // Send first probe
+            // Send first probe (timer detects gap if index 1 doesn't exist)
             rename_tab(1, PROBE_MARKER);
+            set_timeout(1.0);
             return;
         }
 
@@ -362,8 +408,9 @@ impl State {
                 return ProbingResult::Complete(tab_indices);
             }
 
-            // Probe next candidate
+            // Probe next candidate (timer detects gap if index doesn't exist)
             rename_tab(state.candidate, PROBE_MARKER);
+            set_timeout(1.0);
             eprintln!(
                 "[tab-status] Probing: sent probe candidate={}",
                 state.candidate
@@ -371,7 +418,7 @@ impl State {
             return ProbingResult::Continue;
         }
 
-        // Looking for marker
+        // Looking for marker in TabUpdate
         let marker_pos = tabs.iter().position(|t| t.name == PROBE_MARKER);
 
         match marker_pos {
@@ -395,32 +442,8 @@ impl State {
                 ProbingResult::Continue
             }
             None => {
-                // Not found — this index was deleted (gap)
-                eprintln!(
-                    "[tab-status] Probing: candidate={} is a gap (deleted index)",
-                    state.candidate
-                );
-                state.candidate += 1;
-
-                // Safety: prevent infinite loop
-                let max_candidate = state.original_names.len() as u32 * 3;
-                if state.candidate > max_candidate && state.remaining > 0 {
-                    eprintln!(
-                        "[tab-status] WARNING: probing exceeded limit (candidate={}), falling back to [1..N]",
-                        state.candidate
-                    );
-                    let n = state.original_names.len();
-                    let fallback: Vec<u32> = (1..=n as u32).collect();
-                    return ProbingResult::Complete(fallback);
-                }
-
-                // Probe next candidate
-                rename_tab(state.candidate, PROBE_MARKER);
-                eprintln!(
-                    "[tab-status] Probing: sent probe candidate={}",
-                    state.candidate
-                );
-
+                // Marker not found yet — Zellij may not have processed rename_tab.
+                // Gap detection is handled by Timer event (no TabUpdate = gap).
                 ProbingResult::Continue
             }
         }
