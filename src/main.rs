@@ -198,6 +198,33 @@ impl ZellijPlugin for State {
                     }
                     return false;
                 }
+                if status.action == "probe_indices" {
+                    eprintln!("[tab-status] probe_indices: starting re-probe");
+                    let original_names: Vec<String> =
+                        self.tabs.iter().map(|t| t.name.clone()).collect();
+                    let tab_count = original_names.len();
+                    if tab_count == 0 {
+                        eprintln!("[tab-status] probe_indices: no tabs, nothing to probe");
+                        if let Some(ref pipe_id) = cli_pipe_id {
+                            cli_pipe_output(pipe_id, "no tabs");
+                            unblock_cli_pipe_input(pipe_id);
+                        }
+                        return false;
+                    }
+                    self.phase = Phase::Probing(ProbingState {
+                        original_names,
+                        candidate: 1,
+                        found: Vec::new(),
+                        remaining: tab_count,
+                        restoring: false,
+                    });
+                    rename_tab(1, PROBE_MARKER);
+                    if let Some(ref pipe_id) = cli_pipe_id {
+                        cli_pipe_output(pipe_id, "probing started");
+                        unblock_cli_pipe_input(pipe_id);
+                    }
+                    return false;
+                }
             }
         }
 
