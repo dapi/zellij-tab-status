@@ -3,6 +3,35 @@ use zellij_tile::prelude::*;
 
 use zellij_tab_status::pipe_handler::{self, PaneTabMap, PipeEffect, StatusPayload};
 
+/// Probing marker: APL star diaeresis (monochrome, not used as regular status)
+const PROBE_MARKER: &str = "\u{235F}";
+
+#[derive(Debug)]
+enum Phase {
+    Probing(ProbingState),
+    Ready,
+}
+
+#[derive(Debug)]
+struct ProbingState {
+    /// Tab names saved before probing started
+    original_names: Vec<String>,
+    /// Current candidate index being probed
+    candidate: u32,
+    /// Found mappings: (tab_position, persistent_index)
+    found: Vec<(usize, u32)>,
+    /// How many tabs still need to be found
+    remaining: usize,
+    /// true = waiting for name restoration after marker was found
+    restoring: bool,
+}
+
+impl Default for Phase {
+    fn default() -> Self {
+        Phase::Ready
+    }
+}
+
 #[derive(Default)]
 struct State {
     /// Maps pane_id -> (tab_position, tab_name)
@@ -31,6 +60,9 @@ struct State {
     /// pane_id -> persistent tab_index. Pane IDs are stable anchors
     /// for identifying tabs even when positions shift after deletions.
     pane_tab_index: HashMap<u32, u32>,
+
+    /// Current plugin phase: Probing (detecting tab indices) or Ready
+    phase: Phase,
 }
 
 register_plugin!(State);
