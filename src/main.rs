@@ -188,14 +188,28 @@ impl State {
         let new_count = new_tabs.len();
 
         if self.tab_indices.is_empty() {
-            // First TabUpdate: assume indices are 1-indexed sequential
+            // First TabUpdate: start probing to discover real persistent indices
+            let original_names: Vec<String> = new_tabs.iter().map(|t| t.name.clone()).collect();
+            eprintln!(
+                "[tab-status] Starting index probing for {} tabs, names: {:?}",
+                new_count, original_names
+            );
+
+            // Temporary indices for pipe commands (will be overwritten after probing)
             self.tab_indices = (1..=new_count as u32).collect();
             self.next_tab_index = new_count as u32 + 1;
             self.sync_pane_tab_index();
-            eprintln!(
-                "[tab-status] Tab indices initialized: {:?} (next={})",
-                self.tab_indices, self.next_tab_index
-            );
+
+            self.phase = Phase::Probing(ProbingState {
+                original_names,
+                candidate: 1,
+                found: Vec::new(),
+                remaining: new_count,
+                restoring: false,
+            });
+
+            // Send first probe
+            rename_tab(1, PROBE_MARKER);
             return;
         }
 
