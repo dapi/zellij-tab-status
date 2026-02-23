@@ -708,6 +708,87 @@ assert_contains "$debug_result" "tab_indices" "get_debug returns tab_indices"
 assert_contains "$debug_result" "next_tab_index" "get_debug returns next_tab_index"
 assert_contains "$debug_result" "pane_tab_index" "get_debug returns pane_tab_index"
 
+# --- Test 21: probe_indices re-probing ---
+echo "--- 21. probe_indices re-probing ---"
+close_extra_tabs
+PANE_ID=$(discover_pane_id)
+
+pipe_cmd "{\"pane_id\":\"$PANE_ID\",\"action\":\"set_name\",\"name\":\"ProbeTab\"}"
+pipe_cmd "{\"pane_id\":\"$PANE_ID\",\"action\":\"clear_status\"}"
+wait_for_name "$PANE_ID" "ProbeTab" "tab named ProbeTab"
+
+# Create second tab
+zellij action new-tab
+wait_for_tab_count 2
+PANE_PROBE2=$(discover_pane_id)
+pipe_cmd "{\"pane_id\":\"$PANE_PROBE2\",\"action\":\"set_name\",\"name\":\"ProbeTab2\"}"
+wait_for_name "$PANE_PROBE2" "ProbeTab2" "tab2 named ProbeTab2"
+
+# Trigger probe_indices
+result=$(pipe_cmd "{\"action\":\"probe_indices\"}")
+assert_eq "$result" "probing started" "probe_indices returns 'probing started'"
+
+# Wait for probing to complete — names should be restored
+sleep 3
+wait_for_name "$PANE_ID" "ProbeTab" "tab1 name restored after probing"
+wait_for_name "$PANE_PROBE2" "ProbeTab2" "tab2 name restored after probing"
+
+# Verify get_debug shows correct indices after probing
+debug_result=$(pipe_cmd "{\"action\":\"get_debug\"}")
+echo "  Debug after probe: $debug_result"
+assert_contains "$debug_result" "tab_indices" "get_debug works after probing"
+
+# Verify plugin still works normally after probing
+pipe_cmd "{\"pane_id\":\"$PANE_ID\",\"action\":\"set_status\",\"emoji\":\"✅\"}"
+wait_for_tab_contains "✅ ProbeTab" "set_status works after probing"
+
+# --- Test 22: probe_indices with gap ---
+echo "--- 22. probe_indices with gap ---"
+close_extra_tabs
+PANE_ID=$(discover_pane_id)
+
+# Create 3 tabs: G1, G2, G3
+pipe_cmd "{\"pane_id\":\"$PANE_ID\",\"action\":\"set_name\",\"name\":\"G1\"}"
+pipe_cmd "{\"pane_id\":\"$PANE_ID\",\"action\":\"clear_status\"}"
+wait_for_name "$PANE_ID" "G1" "tab1 named G1"
+
+zellij action new-tab
+wait_for_tab_count 2
+PANE_G2=$(discover_pane_id)
+pipe_cmd "{\"pane_id\":\"$PANE_G2\",\"action\":\"set_name\",\"name\":\"G2\"}"
+wait_for_name "$PANE_G2" "G2" "tab2 named G2"
+
+zellij action new-tab
+wait_for_tab_count 3
+PANE_G3=$(discover_pane_id)
+pipe_cmd "{\"pane_id\":\"$PANE_G3\",\"action\":\"set_name\",\"name\":\"G3\"}"
+wait_for_name "$PANE_G3" "G3" "tab3 named G3"
+
+# Delete G2 (middle) — creates a gap in persistent indices
+zellij action go-to-tab 2
+sleep 0.3
+zellij action close-tab
+wait_for_tab_count 2
+
+# Now indices should be [1, 3] (gap at 2)
+# Re-probe to discover real indices
+result=$(pipe_cmd "{\"action\":\"probe_indices\"}")
+assert_eq "$result" "probing started" "probe_indices started"
+
+# Wait for probing to complete
+sleep 5
+
+# Names should be restored
+wait_for_name "$PANE_ID" "G1" "G1 name restored after gap probing"
+wait_for_name "$PANE_G3" "G3" "G3 name restored after gap probing"
+
+# Verify set_status works on correct tabs after probing
+pipe_cmd "{\"pane_id\":\"$PANE_G3\",\"action\":\"set_status\",\"emoji\":\"🎯\"}"
+wait_for_tab_contains "🎯 G3" "G3 has 🎯 after gap probing"
+
+tab_names=$(zellij action query-tab-names)
+assert_not_contains "$tab_names" "🎯 G1" "G1 does not have 🎯"
+
 # --- Summary ---
 echo ""
 echo "==============================="
