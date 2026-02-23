@@ -1,7 +1,7 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use zellij_tile::prelude::*;
 
-use zellij_tab_status::pipe_handler::{self, PaneTabMap, PipeEffect};
+use zellij_tab_status::pipe_handler::{self, PaneTabMap, PipeEffect, StatusPayload};
 
 #[derive(Default)]
 struct State {
@@ -27,6 +27,10 @@ struct State {
 
     /// Counter for the next tab index to assign to newly detected tabs.
     next_tab_index: u32,
+
+    /// pane_id -> persistent tab_index. Pane IDs are stable anchors
+    /// for identifying tabs even when positions shift after deletions.
+    pane_tab_index: HashMap<u32, u32>,
 }
 
 register_plugin!(State);
@@ -68,6 +72,10 @@ impl ZellijPlugin for State {
             Event::PaneUpdate(panes) => {
                 eprintln!("[tab-status] PaneUpdate: {} tab entries", panes.panes.len());
                 self.panes = panes;
+                // Note: sync_pane_tab_index is NOT called here because PaneUpdate
+                // can arrive before TabUpdate during tab deletion, when pane positions
+                // have shifted but tab_indices is stale. Sync only runs inside
+                // update_tab_indices() where tab_indices are always correct.
                 self.rebuild_mapping();
             }
             _ => {}
@@ -87,16 +95,36 @@ impl ZellijPlugin for State {
             _ => None,
         };
 
+        // Handle get_debug before pipe_handler (needs access to State)
+        if let Some(ref payload) = pipe_message.payload {
+            if let Ok(status) = serde_json::from_str::<StatusPayload>(payload) {
+                if status.action == "get_debug" {
+                    let debug_info = serde_json::json!({
+                        "tab_indices": self.tab_indices,
+                        "next_tab_index": self.next_tab_index,
+                        "pane_tab_index": self.pane_tab_index,
+                        "pane_to_tab_count": self.pane_to_tab.len(),
+                    });
+                    let output = debug_info.to_string();
+                    eprintln!("[tab-status] get_debug: {}", output);
+                    if let Some(ref pipe_id) = cli_pipe_id {
+                        cli_pipe_output(pipe_id, &output);
+                        unblock_cli_pipe_input(pipe_id);
+                    }
+                    return false;
+                }
+            }
+        }
+
         let effects =
             pipe_handler::handle_status(&mut self.pane_to_tab, &pipe_message.payload);
 
         for effect in &effects {
             match effect {
-                PipeEffect::RenameTab { tab_id, name } => {
-                    let tab_position = (*tab_id - 1) as usize;
+                PipeEffect::RenameTab { tab_position, name } => {
                     // Use persistent tab index (workaround for Zellij #3535)
-                    let actual_index = self.get_tab_index(tab_position);
-                    self.pending_renames.insert(tab_position, name.clone());
+                    let actual_index = self.get_tab_index(*tab_position);
+                    self.pending_renames.insert(*tab_position, name.clone());
                     rename_tab(actual_index, name);
                 }
                 PipeEffect::PipeOutput { output } => {
@@ -121,15 +149,17 @@ impl ZellijPlugin for State {
 
 impl State {
     /// Track persistent tab indices across TabUpdate events.
+    /// Uses pane IDs as stable anchors instead of name-based diff.
     /// Zellij bug #3535: rename_tab uses persistent 1-indexed tab index,
     /// not position. Indices are never reused after deletion.
     fn update_tab_indices(&mut self, new_tabs: &[TabInfo]) {
         let new_count = new_tabs.len();
 
         if self.tab_indices.is_empty() {
-            // First TabUpdate: indices are 1-indexed sequential
+            // First TabUpdate: assume indices are 1-indexed sequential
             self.tab_indices = (1..=new_count as u32).collect();
             self.next_tab_index = new_count as u32 + 1;
+            self.sync_pane_tab_index();
             eprintln!(
                 "[tab-status] Tab indices initialized: {:?} (next={})",
                 self.tab_indices, self.next_tab_index
@@ -137,47 +167,59 @@ impl State {
             return;
         }
 
-        let old_count = self.tab_indices.len();
-
-        if new_count == old_count {
-            // No structural change (just renames), indices stay the same
+        if new_count == self.tab_indices.len() {
+            // No structural change (just renames), sync pane mapping
+            self.sync_pane_tab_index();
             return;
         }
 
-        // Build old names from self.tabs (the previous TabUpdate state)
-        let old_names: Vec<&str> = self.tabs.iter().map(|t| t.name.as_str()).collect();
-        let new_names: Vec<&str> = new_tabs.iter().map(|t| t.name.as_str()).collect();
-
-        // Diff old vs new to track which indices survive
+        // Structural change: find surviving tabs by pane_id lookup.
+        // Only trust pane_tab_index entries whose index exists in current tab_indices
+        // (stale entries from deleted tabs would cause wrong index assignment).
         let mut new_indices = Vec::with_capacity(new_count);
-        let mut oi = 0usize; // old index
-        let mut ni = 0usize; // new index
-
-        while ni < new_count {
-            if oi < old_count && old_names[oi] == new_names[ni] {
-                // Matched: same tab at this position
-                new_indices.push(self.tab_indices[oi]);
-                oi += 1;
-                ni += 1;
-            } else if new_count < old_count && oi < old_count {
-                // Tab deleted at old position oi — skip it
-                oi += 1;
-            } else {
-                // New tab at new position ni
-                new_indices.push(self.next_tab_index);
-                self.next_tab_index += 1;
-                ni += 1;
+        for pos in 0..new_count {
+            let known = self.panes.panes.get(&pos).and_then(|panes| {
+                panes
+                    .iter()
+                    .filter(|p| !p.is_plugin)
+                    .find_map(|p| {
+                        self.pane_tab_index
+                            .get(&p.id)
+                            .copied()
+                            .filter(|idx| self.tab_indices.contains(idx))
+                    })
+            });
+            match known {
+                Some(idx) => new_indices.push(idx),
+                None => {
+                    new_indices.push(self.next_tab_index);
+                    self.next_tab_index += 1;
+                }
             }
         }
 
         self.tab_indices = new_indices;
-        // Recalculate next index to match Zellij's get_new_tab_index()
-        // which uses `last_key + 1`, NOT a monotonically increasing counter.
         self.next_tab_index = self.tab_indices.iter().max().copied().unwrap_or(0) + 1;
+        self.sync_pane_tab_index();
         eprintln!(
             "[tab-status] Tab indices updated: {:?} (next={})",
             self.tab_indices, self.next_tab_index
         );
+    }
+
+    /// Rebuild pane_id -> persistent tab_index mapping from current tab_indices + PaneManifest.
+    /// Clears stale entries to prevent reused pane IDs from mapping to deleted tab indices.
+    fn sync_pane_tab_index(&mut self) {
+        self.pane_tab_index.clear();
+        for (pos, &tab_idx) in self.tab_indices.iter().enumerate() {
+            if let Some(panes) = self.panes.panes.get(&pos) {
+                for pane in panes {
+                    if !pane.is_plugin {
+                        self.pane_tab_index.insert(pane.id, tab_idx);
+                    }
+                }
+            }
+        }
     }
 
     /// Get the persistent Zellij tab index for a given position.

@@ -7,7 +7,7 @@ use crate::status_utils::{extract_base_name, extract_status};
 /// Side effects returned by pure handlers, executed by main.rs via Zellij API calls
 #[derive(Debug, PartialEq)]
 pub enum PipeEffect {
-    RenameTab { tab_id: u32, name: String },
+    RenameTab { tab_position: usize, name: String },
     PipeOutput { output: String },
 }
 
@@ -97,7 +97,6 @@ pub fn handle_status(pane_to_tab: &mut PaneTabMap, payload: &Option<String>) -> 
     let current_name = current_name.clone();
 
     let base_name = extract_base_name(&current_name);
-    let tab_id = (tab_position + 1) as u32;
 
     match status.action.as_str() {
         "set_status" => {
@@ -107,11 +106,11 @@ pub fn handle_status(pane_to_tab: &mut PaneTabMap, payload: &Option<String>) -> 
             }
             let new_name = format!("{} {}", status.emoji, base_name);
             eprintln!(
-                "[tab-status] set_status on tab {} (position {}): '{}' -> '{}'",
-                tab_id, tab_position, current_name, new_name
+                "[tab-status] set_status on tab position {}: '{}' -> '{}'",
+                tab_position, current_name, new_name
             );
             let effects = vec![PipeEffect::RenameTab {
-                tab_id,
+                tab_position,
                 name: new_name.clone(),
             }];
             update_cached_name(pane_to_tab, pane_id, new_name);
@@ -120,11 +119,11 @@ pub fn handle_status(pane_to_tab: &mut PaneTabMap, payload: &Option<String>) -> 
         "clear_status" => {
             let new_name = base_name.to_string();
             eprintln!(
-                "[tab-status] clear_status on tab {} (position {}): '{}' -> '{}'",
-                tab_id, tab_position, current_name, new_name
+                "[tab-status] clear_status on tab position {}: '{}' -> '{}'",
+                tab_position, current_name, new_name
             );
             let effects = vec![PipeEffect::RenameTab {
-                tab_id,
+                tab_position,
                 name: new_name.clone(),
             }];
             update_cached_name(pane_to_tab, pane_id, new_name);
@@ -155,11 +154,11 @@ pub fn handle_status(pane_to_tab: &mut PaneTabMap, payload: &Option<String>) -> 
                 format!("{} {}", current_status, status.name)
             };
             eprintln!(
-                "[tab-status] set_name on tab {} (position {}): '{}' -> '{}'",
-                tab_id, tab_position, current_name, new_name
+                "[tab-status] set_name on tab position {}: '{}' -> '{}'",
+                tab_position, current_name, new_name
             );
             let effects = vec![PipeEffect::RenameTab {
-                tab_id,
+                tab_position,
                 name: new_name.clone(),
             }];
             update_cached_name(pane_to_tab, pane_id, new_name);
@@ -167,7 +166,7 @@ pub fn handle_status(pane_to_tab: &mut PaneTabMap, payload: &Option<String>) -> 
         }
         _ => {
             eprintln!(
-                "[tab-status] ERROR: unknown action '{}'. Use 'set_status', 'clear_status', 'get_status', 'get_name', 'set_name', or 'get_version'",
+                "[tab-status] ERROR: unknown action '{}'. Use 'set_status', 'clear_status', 'get_status', 'get_name', 'set_name', 'get_version', or 'get_debug'",
                 status.action
             );
             vec![]
@@ -202,7 +201,7 @@ mod tests {
         assert_eq!(
             effects,
             vec![PipeEffect::RenameTab {
-                tab_id: 1,
+                tab_position: 0,
                 name: "🤖 Work".into()
             }]
         );
@@ -228,7 +227,7 @@ mod tests {
         assert_eq!(
             effects,
             vec![PipeEffect::RenameTab {
-                tab_id: 1,
+                tab_position: 0,
                 name: "✅ Work".into()
             }]
         );
@@ -256,7 +255,7 @@ mod tests {
         assert_eq!(
             effects,
             vec![PipeEffect::RenameTab {
-                tab_id: 1,
+                tab_position: 0,
                 name: "Work".into()
             }]
         );
@@ -282,7 +281,7 @@ mod tests {
         assert_eq!(
             effects,
             vec![PipeEffect::RenameTab {
-                tab_id: 1,
+                tab_position: 0,
                 name: "Work".into()
             }]
         );
@@ -358,7 +357,7 @@ mod tests {
         assert_eq!(
             effects,
             vec![PipeEffect::RenameTab {
-                tab_id: 1,
+                tab_position: 0,
                 name: "🤖 Code".into()
             }]
         );
@@ -374,7 +373,7 @@ mod tests {
         assert_eq!(
             effects,
             vec![PipeEffect::RenameTab {
-                tab_id: 1,
+                tab_position: 0,
                 name: "Code".into()
             }]
         );
@@ -450,10 +449,10 @@ mod tests {
         assert_eq!(effects, vec![]);
     }
 
-    // ==================== tab_id calculation ====================
+    // ==================== tab_position passthrough ====================
 
     #[test]
-    fn tab_id_is_one_indexed() {
+    fn tab_position_passed_through() {
         let mut map = make_map(&[(5, 2, "Tab3")]);
         let effects = handle_status(
             &mut map,
@@ -462,7 +461,7 @@ mod tests {
         assert_eq!(
             effects,
             vec![PipeEffect::RenameTab {
-                tab_id: 3, // position 2 + 1
+                tab_position: 2,
                 name: "🔥 Tab3".into()
             }]
         );

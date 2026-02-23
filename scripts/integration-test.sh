@@ -569,6 +569,122 @@ pipe_cmd "{\"pane_id\":\"$PANE_ID\",\"action\":\"clear_status\"}"
 pipe_cmd "{\"pane_id\":\"$PANE_ID\",\"action\":\"set_status\",\"emoji\":\"🔥\"}"
 wait_for_tab_contains "🔥 Rapid" "clear + set works"
 
+# --- Test 17: 5 tabs, set_status on tab 5 ---
+echo "--- 17. Five tabs: set_status on tab 5 ---"
+close_extra_tabs
+PANE_ID=$(discover_pane_id)
+
+pipe_cmd "{\"pane_id\":\"$PANE_ID\",\"action\":\"set_name\",\"name\":\"T1\"}"
+pipe_cmd "{\"pane_id\":\"$PANE_ID\",\"action\":\"clear_status\"}"
+wait_for_name "$PANE_ID" "T1" "tab1 named T1"
+
+# Create tabs 2-5
+zellij action new-tab
+wait_for_tab_count 2
+PANE_T2=$(discover_pane_id)
+pipe_cmd "{\"pane_id\":\"$PANE_T2\",\"action\":\"set_name\",\"name\":\"T2\"}"
+wait_for_name "$PANE_T2" "T2" "tab2 named T2"
+
+zellij action new-tab
+wait_for_tab_count 3
+PANE_T3=$(discover_pane_id)
+pipe_cmd "{\"pane_id\":\"$PANE_T3\",\"action\":\"set_name\",\"name\":\"T3\"}"
+wait_for_name "$PANE_T3" "T3" "tab3 named T3"
+
+zellij action new-tab
+wait_for_tab_count 4
+PANE_T4=$(discover_pane_id)
+pipe_cmd "{\"pane_id\":\"$PANE_T4\",\"action\":\"set_name\",\"name\":\"T4\"}"
+wait_for_name "$PANE_T4" "T4" "tab4 named T4"
+
+zellij action new-tab
+wait_for_tab_count 5
+PANE_T5=$(discover_pane_id)
+pipe_cmd "{\"pane_id\":\"$PANE_T5\",\"action\":\"set_name\",\"name\":\"T5\"}"
+wait_for_name "$PANE_T5" "T5" "tab5 named T5"
+
+# Go back to tab 1 and set status on tab 5's pane
+zellij action go-to-tab 1
+sleep 0.3
+pipe_cmd "{\"pane_id\":\"$PANE_T5\",\"action\":\"set_status\",\"emoji\":\"🎯\"}"
+wait_for_tab_contains "🎯 T5" "tab5 has 🎯"
+
+tab_names=$(zellij action query-tab-names)
+assert_not_contains "$tab_names" "🎯 T1" "T1 does not have 🎯"
+assert_not_contains "$tab_names" "🎯 T2" "T2 does not have 🎯"
+assert_not_contains "$tab_names" "🎯 T3" "T3 does not have 🎯"
+assert_not_contains "$tab_names" "🎯 T4" "T4 does not have 🎯"
+
+# Count how many lines contain 🎯 — must be exactly 1
+emoji_count=$(echo "$tab_names" | grep -c "🎯" || true)
+assert_eq "$emoji_count" "1" "exactly one tab has 🎯"
+
+# --- Test 18: set_status on tabs 3, 4, 5 from tab 1 ---
+echo "--- 18. Five tabs: set_status on tabs 3, 4, 5 ---"
+# Still have 5 tabs from Test 17, clear all statuses first
+pipe_cmd "{\"pane_id\":\"$PANE_T5\",\"action\":\"clear_status\"}"
+sleep 0.3
+
+# Set different emoji on tabs 3, 4, 5
+pipe_cmd "{\"pane_id\":\"$PANE_T3\",\"action\":\"set_status\",\"emoji\":\"🔴\"}"
+pipe_cmd "{\"pane_id\":\"$PANE_T4\",\"action\":\"set_status\",\"emoji\":\"🟡\"}"
+pipe_cmd "{\"pane_id\":\"$PANE_T5\",\"action\":\"set_status\",\"emoji\":\"🟢\"}"
+wait_for_tab_contains "🔴 T3" "tab3 has 🔴"
+wait_for_tab_contains "🟡 T4" "tab4 has 🟡"
+wait_for_tab_contains "🟢 T5" "tab5 has 🟢"
+
+tab_names=$(zellij action query-tab-names)
+assert_contains "$tab_names" "T1" "T1 clean (no emoji prefix)"
+assert_contains "$tab_names" "T2" "T2 clean (no emoji prefix)"
+assert_not_contains "$tab_names" "🔴 T1" "T1 does not have 🔴"
+assert_not_contains "$tab_names" "🟡 T1" "T1 does not have 🟡"
+assert_not_contains "$tab_names" "🟢 T1" "T1 does not have 🟢"
+
+# --- Test 19: set_status after delete + create ---
+echo "--- 19. set_status after tab delete + create ---"
+close_extra_tabs
+PANE_ID=$(discover_pane_id)
+
+# Create 3 tabs: A, B, C
+pipe_cmd "{\"pane_id\":\"$PANE_ID\",\"action\":\"set_name\",\"name\":\"A\"}"
+pipe_cmd "{\"pane_id\":\"$PANE_ID\",\"action\":\"clear_status\"}"
+wait_for_name "$PANE_ID" "A" "tab1 named A"
+
+zellij action new-tab
+wait_for_tab_count 2
+PANE_B=$(discover_pane_id)
+pipe_cmd "{\"pane_id\":\"$PANE_B\",\"action\":\"set_name\",\"name\":\"B\"}"
+wait_for_name "$PANE_B" "B" "tab2 named B"
+
+zellij action new-tab
+wait_for_tab_count 3
+PANE_C=$(discover_pane_id)
+pipe_cmd "{\"pane_id\":\"$PANE_C\",\"action\":\"set_name\",\"name\":\"C\"}"
+wait_for_name "$PANE_C" "C" "tab3 named C"
+
+# Delete B (middle tab)
+zellij action go-to-tab 2
+sleep 0.3
+zellij action close-tab
+wait_for_tab_count 2
+
+# Create D (new tab)
+zellij action new-tab
+wait_for_tab_count 3
+PANE_D=$(discover_pane_id)
+pipe_cmd "{\"pane_id\":\"$PANE_D\",\"action\":\"set_name\",\"name\":\"D\"}"
+wait_for_name "$PANE_D" "D" "new tab named D"
+
+# Set status on D
+pipe_cmd "{\"pane_id\":\"$PANE_D\",\"action\":\"set_status\",\"emoji\":\"🆕\"}"
+wait_for_tab_contains "🆕 D" "D has 🆕 status"
+
+tab_names=$(zellij action query-tab-names)
+assert_not_contains "$tab_names" "🆕 A" "A does not have 🆕"
+assert_not_contains "$tab_names" "🆕 C" "C does not have 🆕"
+assert_contains "$tab_names" "A" "A is unchanged"
+assert_contains "$tab_names" "C" "C is unchanged"
+
 # --- Summary ---
 echo ""
 echo "==============================="
