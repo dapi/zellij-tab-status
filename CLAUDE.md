@@ -77,9 +77,10 @@ All commands go through `tab-status` pipe:
 {"pane_id": "123", "action": "get_name"}
 {"pane_id": "123", "action": "set_name", "name": "New Name"}
 {"action": "get_version"}
+{"action": "get_debug"}
 ```
 
-Note: `get_version` does not require `pane_id`.
+Note: `get_version` and `get_debug` do not require `pane_id`. `get_debug` returns JSON with `tab_indices`, `next_tab_index`, `pane_tab_index`, `pane_to_tab_count` — handled in main.rs before pipe_handler.
 
 ### Plugin Loading
 
@@ -93,12 +94,11 @@ For integration tests in Docker, the plugin IS pre-loaded via `load_plugins` in 
 
 ### State Management
 
-- `pane_to_tab: PaneTabMap` (alias for `BTreeMap<u32, (usize, String)>`) — maps pane_id to (tab_position, tab_name)
-- Rebuilt on every `TabUpdate` or `PaneUpdate` event
-- Tab position is 0-indexed internally (from `TabInfo.position`), converted to 1-indexed `tab_id` in `pipe_handler.rs` for the `rename_tab()` API
+- `pane_to_tab: PaneTabMap` (alias for `BTreeMap<u32, (usize, String)>`) — maps pane_id to (tab_position, tab_name). Rebuilt on every `TabUpdate` or `PaneUpdate` event
 - `pending_renames: BTreeMap<usize, String>` — protects against `rebuild_mapping` overwriting inline cache updates with stale tab names before `TabUpdate` confirms a rename
 - `tab_indices: Vec<u32>` — maps tab position → persistent Zellij tab index (workaround for Zellij bug #3535)
 - `next_tab_index: u32` — counter for assigning indices to newly created tabs
+- `pane_tab_index: HashMap<u32, u32>` — maps pane_id → persistent tab_index. Pane IDs are stable anchors for identifying tabs across structural changes (deletions/creations)
 
 ### Zellij Bug #3535: rename_tab uses persistent tab index
 
@@ -113,12 +113,18 @@ The Zellij server treats the value as a **persistent internal tab index**, NOT a
 - Indices are NEVER reassigned after deletion. Deleting tab index 1 leaves [2, 3, ...]
 - `TabInfo.position` IS re-indexed after deletion (0, 1, 2, ...) — so `position + 1 != index` after any deletion
 
-**Workaround in our plugin:**
-- `tab_indices: Vec<u32>` tracks the persistent index for each tab position
-- On `TabUpdate`, diff old vs new tab lists (by name) to detect additions/deletions
-- When calling `rename_tab()`, use `tab_indices[position]` instead of `position + 1`
-- pipe_handler.rs still computes `tab_id = position + 1` (pure logic, unaware of bug)
-- main.rs applies correction: `actual_index = self.get_tab_index(tab_position)`
+**Workaround — three-level pipeline:**
+
+1. **pipe_handler.rs** (pure logic) — receives `pane_id`, looks up `tab_position` in `pane_to_tab` cache, returns `PipeEffect::RenameTab { tab_position, name }`. Knows nothing about persistent indices.
+
+2. **main.rs: get_tab_index(position)** — converts position → persistent index via `tab_indices[position]`. Called when executing `RenameTab` effects. This is the ONLY place where position→index conversion happens.
+
+3. **main.rs: update_tab_indices()** — maintains the `tab_indices` vector using pane-ID anchors:
+   - On first `TabUpdate`: assumes `[1..=N]`
+   - On structural change (tab count changed): looks up surviving panes via `pane_tab_index` (pane_id → index). Panes found in `pane_tab_index` with a valid current index keep their old index; unknown panes get `next_tab_index++`
+   - Filters stale entries: only trusts `pane_tab_index` values present in current `tab_indices` (prevents reused pane IDs from mapping to deleted tab indices)
+
+**Critical timing constraint:** `sync_pane_tab_index()` must NOT run in `PaneUpdate` handler — only inside `update_tab_indices()`. Reason: `PaneUpdate` can arrive BEFORE `TabUpdate` during tab deletion, when pane positions have already shifted but `tab_indices` is stale. Syncing at that moment would corrupt `pane_tab_index` (mapping surviving panes to wrong indices).
 
 ### Unicode Handling
 
@@ -147,7 +153,7 @@ Uses `unicode-segmentation` for proper emoji handling:
 # Unit tests (39 tests in pipe_handler + status_utils, no WASM runtime needed):
 cargo test --lib
 
-# Integration tests (34 assertions in 10 tests, Docker required, runs headless Zellij):
+# Integration tests (101 assertions in 19 tests, Docker required, runs headless Zellij):
 make test-integration
 
 # In Zellij session (after make install + restart):
@@ -164,7 +170,7 @@ tail -f /tmp/zellij-1000/zellij-log/zellij.log | grep tab-status
 2. `docker build -f Dockerfile.test` — Ubuntu + Zellij image
 3. `docker run` with mounted .wasm + scripts:
    - `docker-test-runner.sh` creates Zellij config + permissions, starts headless session via `script` (PTY), discovers pane ID, runs tests
-   - `integration-test.sh` executes 10 test groups (34 assertions) via `zellij pipe`
+   - `integration-test.sh` executes 19 test groups (101 assertions) via `zellij pipe`
 
 Key details for Docker testing:
 - Zellij needs PTY: `script -qfc "zellij ..." /dev/null > /dev/null 2>&1 &`
