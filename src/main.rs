@@ -158,6 +158,28 @@ impl ZellijPlugin for State {
             _ => None,
         };
 
+        // Allow get_version and get_debug during probing, block everything else
+        let is_probing = matches!(self.phase, Phase::Probing(_));
+        if is_probing {
+            let is_allowed = pipe_message.payload.as_ref().map_or(false, |p| {
+                serde_json::from_str::<StatusPayload>(p)
+                    .map(|s| {
+                        s.action == "get_version"
+                            || s.action == "get_debug"
+                            || s.action == "probe_indices"
+                    })
+                    .unwrap_or(false)
+            });
+            if !is_allowed {
+                eprintln!("[tab-status] Probing in progress, blocking pipe command");
+                if let Some(ref pipe_id) = cli_pipe_id {
+                    cli_pipe_output(pipe_id, "");
+                    unblock_cli_pipe_input(pipe_id);
+                }
+                return false;
+            }
+        }
+
         // Handle get_debug before pipe_handler (needs access to State)
         if let Some(ref payload) = pipe_message.payload {
             if let Ok(status) = serde_json::from_str::<StatusPayload>(payload) {
