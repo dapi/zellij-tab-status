@@ -193,6 +193,26 @@ This plugin works with [zellij-tab-claude-status](https://github.com/dapi/claude
 - 🤖 Working — processing request
 - ✋ Needs input — permission prompt waiting
 
+## Alternatives
+
+Other Zellij plugins for Claude Code integration:
+
+| | zellij-tab-status | zellaude | zellij-attention |
+|---|---|---|---|
+| **Тип** | Модификатор имён | Tab bar replacement | Модификатор имён |
+| **Совместимость с tab bar** | ✅ Любой | ❌ Полная замена | ✅ Любой |
+| **Баг #3535 решён** | ✅ Probing + pane anchors | — (не трогает табы) | ❌ |
+| **Работает после удаления табов** | ✅ | ✅ | ❌ |
+| **Формат статуса** | `🤖 Name` (prefix) | Свой UI с цветами | `Name ⏳` (suffix) |
+| **Типы статусов** | 🔧 Любой emoji | 🎨 Детальные (tool, thinking, etc.) | 2 (waiting/completed) |
+| **Настройки** | ❌ | ✅ (UI меню) | ✅ (через layout) |
+
+**zellij-tab-status** — базовый слой, совместим с любым tab bar (zjstatus, стандартный, кастомный).
+
+**zellaude** — "всё-в-одном" для тех, кто хочет готовый красивый UI.
+
+**zellij-attention** — минималист, только waiting/completed.
+
 ## API Reference
 
 ### `tab-status` Pipe
