@@ -36,46 +36,54 @@ make install
 
 ### Configure Zellij
 
-`make install` automatically configures `~/.config/zellij/config.kdl`.
+No `config.kdl` changes are required for the default setup.
+The plugin is launched on-demand via `zellij pipe --plugin ...`.
 
-Restart Zellij session to load the plugin.
+Optional preloaded mode (if you want `--name tab-status` commands):
+```kdl
+load_plugins {
+    "file:~/.config/zellij/plugins/zellij-tab-status.wasm"
+}
+```
 
 ## Usage
 
 ### Basic Status Management
 
 ```bash
+PLUGIN_PATH="file:$HOME/.config/zellij/plugins/zellij-tab-status.wasm"
+
 # Set status emoji: "my-tab" → "🤖 my-tab"
-zellij pipe --name tab-status -- '{"pane_id": "'$ZELLIJ_PANE_ID'", "action": "set_status", "emoji": "🤖"}'
+zellij pipe --plugin "$PLUGIN_PATH" -- '{"pane_id": "'$ZELLIJ_PANE_ID'", "action": "set_status", "emoji": "🤖"}'
 
 # Change status: "🤖 my-tab" → "✅ my-tab"
-zellij pipe --name tab-status -- '{"pane_id": "'$ZELLIJ_PANE_ID'", "action": "set_status", "emoji": "✅"}'
+zellij pipe --plugin "$PLUGIN_PATH" -- '{"pane_id": "'$ZELLIJ_PANE_ID'", "action": "set_status", "emoji": "✅"}'
 
 # Clear status: "✅ my-tab" → "my-tab"
-zellij pipe --name tab-status -- '{"pane_id": "'$ZELLIJ_PANE_ID'", "action": "clear_status"}'
+zellij pipe --plugin "$PLUGIN_PATH" -- '{"pane_id": "'$ZELLIJ_PANE_ID'", "action": "clear_status"}'
 ```
 
 ### Rename Tab (Preserving Status)
 
 ```bash
 # Rename tab without losing emoji: "🤖 my-tab" → "🤖 new-name"
-zellij pipe --name tab-status -- '{"pane_id": "'$ZELLIJ_PANE_ID'", "action": "set_name", "name": "new-name"}'
+zellij pipe --plugin "$PLUGIN_PATH" -- '{"pane_id": "'$ZELLIJ_PANE_ID'", "action": "set_name", "name": "new-name"}'
 ```
 
 ### Query
 
 ```bash
 # Get current emoji (outputs to stdout)
-zellij pipe --name tab-status -- '{"pane_id": "'$ZELLIJ_PANE_ID'", "action": "get_status"}'
+zellij pipe --plugin "$PLUGIN_PATH" -- '{"pane_id": "'$ZELLIJ_PANE_ID'", "action": "get_status"}'
 # Output: 🤖
 
 # Get base name without emoji
-zellij pipe --name tab-status -- '{"pane_id": "'$ZELLIJ_PANE_ID'", "action": "get_name"}'
+zellij pipe --plugin "$PLUGIN_PATH" -- '{"pane_id": "'$ZELLIJ_PANE_ID'", "action": "get_name"}'
 # Output: my-tab
 
 # Get installed plugin version
-zellij pipe --name tab-status -- '{"pane_id": "'$ZELLIJ_PANE_ID'", "action": "get_version"}'
-# Output: 0.4.0
+zellij pipe --plugin "$PLUGIN_PATH" -- '{"pane_id": "'$ZELLIJ_PANE_ID'", "action": "get_version"}'
+# Output: 0.7.1
 ```
 
 ## Status Emoji Examples
@@ -235,17 +243,15 @@ Plugin uses grapheme clustering. If emoji appears broken:
 - Check font has emoji glyphs
 - Try simpler emoji (🟢 instead of 👨‍👩‍👧)
 
-### Auto-Config Failed
+### Preloaded Mode (Optional)
 
-If automatic configuration fails during `make install`:
-1. Check backup: `~/.config/zellij/config.kdl.bak`
-2. Manually add to `~/.config/zellij/config.kdl`:
-   ```kdl
-   load_plugins {
-       "file:~/.config/zellij/plugins/zellij-tab-status.wasm"
-   }
-   ```
-3. Report issue: https://github.com/dapi/zellij-tab-status/issues
+If you want to target plugin by name (`--name tab-status`) instead of `--plugin`,
+add the plugin to `~/.config/zellij/config.kdl`:
+```kdl
+load_plugins {
+    "file:~/.config/zellij/plugins/zellij-tab-status.wasm"
+}
+```
 
 ## Development
 
@@ -272,7 +278,7 @@ TEST_PLUGIN_MODE=ondemand make test-integration
 # Verify on-demand --plugin does not duplicate plugin instance
 make test-plugin-dedup
 
-# Regression check for issue #5 (currently expected to fail until fixed)
+# Regression check for issue #5 (floating panel input)
 make test-issue5-regression
 ```
 

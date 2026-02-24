@@ -33,7 +33,7 @@ test:
 
 # Test in live Zellij session (run after installing and restarting zellij)
 test-live:
-	zellij pipe --plugin "file:$(INSTALL_DIR)/$(PLUGIN_NAME).wasm" --name tab-status -- '{"pane_id": "'"$$ZELLIJ_PANE_ID"'", "action": "set_status", "emoji": "🧪"}' < /dev/null
+	zellij pipe --plugin "file:$(INSTALL_DIR)/$(PLUGIN_NAME).wasm" -- '{"pane_id": "'"$$ZELLIJ_PANE_ID"'", "action": "set_status", "emoji": "🧪"}' < /dev/null
 	sleep 0.5
 	zellij action query-tab-names
 

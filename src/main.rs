@@ -66,6 +66,10 @@ impl ZellijPlugin for State {
     fn load(&mut self, _configuration: BTreeMap<String, String>) {
         eprintln!("[tab-status] Plugin loaded v{}", env!("CARGO_PKG_VERSION"));
 
+        // When launched on-demand via `zellij pipe --plugin`, hide this plugin pane
+        // so it does not appear as an empty floating panel in the UI.
+        hide_self();
+
         request_permission(&[
             PermissionType::ReadApplicationState,
             PermissionType::ChangeApplicationState,
