@@ -1,29 +1,21 @@
 #!/usr/bin/env bash
 #
-# Regression check for issue #6:
-# "In a fresh session, first zellij-tab-status '>' call is ignored."
-#
-# Runs INSIDE Docker container with on-demand plugin loading (empty load_plugins).
-# Verifies CLI wrapper retries on NOT_READY and applies status on first user call.
+# Regression check for issue #6 (plugin-side queueing):
+# A single raw `zellij pipe --plugin ... set_status` call in a fresh session
+# must eventually apply, even if it arrives before pane mapping is ready.
 #
 set -euo pipefail
 
 PLUGIN_WASM="/test/plugin.wasm"
-INSTALLED_WASM="/root/.config/zellij/plugins/zellij-tab-status.wasm"
-SCRIPT_PATH="/test/scripts/zellij-tab-status"
-ATTEMPTS="${ISSUE6_ATTEMPTS:-3}"
+PLUGIN_PATH="file:$PLUGIN_WASM"
+ATTEMPTS="${ISSUE6_RAW_ATTEMPTS:-3}"
 
 if [[ ! -f "$PLUGIN_WASM" ]]; then
     echo "ERROR: Plugin not found at $PLUGIN_WASM"
     exit 1
 fi
-if [[ ! -x "$SCRIPT_PATH" ]]; then
-    echo "ERROR: Script not executable at $SCRIPT_PATH"
-    exit 1
-fi
 
-mkdir -p /root/.config/zellij /root/.config/zellij/plugins /root/.cache/zellij
-cp "$PLUGIN_WASM" "$INSTALLED_WASM"
+mkdir -p /root/.config/zellij /root/.cache/zellij
 cat > /root/.config/zellij/config.kdl <<EOF
 show_startup_tips false
 show_release_notes false
@@ -32,11 +24,6 @@ EOF
 
 cat > /root/.cache/zellij/permissions.kdl <<EOF
 "$PLUGIN_WASM" {
-    ReadApplicationState
-    ChangeApplicationState
-    ReadCliPipes
-}
-"$INSTALLED_WASM" {
     ReadApplicationState
     ChangeApplicationState
     ReadCliPipes
@@ -57,9 +44,9 @@ failures=0
 
 run_once() {
     local run="$1"
-    local session="issue6-regression-$run"
+    local session="issue6-raw-regression-$run"
     local zpid=""
-    local pane_file="/tmp/issue6_pane_$run"
+    local pane_file="/tmp/issue6_raw_pane_$run"
     local pane_id=""
 
     cleanup() {
@@ -68,8 +55,6 @@ run_once() {
             wait "$zpid" >/dev/null 2>&1 || true
         fi
         unset ZELLIJ_SESSION
-        unset ZELLIJ_PANE_ID
-        unset ZELLIJ
     }
     trap cleanup RETURN
 
@@ -114,27 +99,26 @@ run_once() {
         return 1
     fi
 
-    local before after_first
+    local before after payload
     before="$(zellij action query-tab-names 2>/dev/null || true)"
+    payload="{\"pane_id\":\"$pane_id\",\"action\":\"set_status\",\"emoji\":\">\"}"
 
-    export ZELLIJ_PANE_ID="$pane_id"
-    export ZELLIJ=1
-    timeout 5s "$SCRIPT_PATH" ">" > /dev/null || true
+    timeout 5s zellij pipe --plugin "$PLUGIN_PATH" -- "$payload" < /dev/null > /dev/null || true
 
-    after_first="$before"
-    for _ in $(seq 1 20); do
+    after="$before"
+    for _ in $(seq 1 30); do
         sleep 0.1
-        after_first="$(zellij action query-tab-names 2>/dev/null || true)"
-        if has_status_marker "$after_first" && ! has_probe_marker "$after_first"; then
+        after="$(zellij action query-tab-names 2>/dev/null || true)"
+        if has_status_marker "$after" && ! has_probe_marker "$after"; then
             break
         fi
     done
 
     printf 'run_%s before:\n%s\n' "$run" "$before"
-    printf 'run_%s after_first:\n%s\n' "$run" "$after_first"
+    printf 'run_%s after:\n%s\n' "$run" "$after"
 
-    if ! has_status_marker "$after_first" || has_probe_marker "$after_first"; then
-        echo "run_$run: reproduced (first user call did not apply status)"
+    if ! has_status_marker "$after" || has_probe_marker "$after"; then
+        echo "run_$run: reproduced (single raw call did not apply status)"
         return 1
     fi
 
@@ -151,8 +135,8 @@ done
 echo "summary attempts=$ATTEMPTS failures=$failures"
 
 if [[ "$failures" -gt 0 ]]; then
-    echo "FAIL: issue #6 reproduced"
+    echo "FAIL: issue #6 raw regression reproduced"
     exit 1
 fi
 
-echo "PASS: issue #6 not reproduced"
+echo "PASS: issue #6 raw regression not reproduced"

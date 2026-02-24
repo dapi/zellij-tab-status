@@ -1,4 +1,4 @@
-.PHONY: build install install-scripts clean test test-live test-integration test-plugin-dedup test-issue5-regression test-issue6-regression
+.PHONY: build install install-scripts clean test test-live test-integration test-plugin-dedup test-issue5-regression test-issue6-regression test-issue6-raw-regression
 
 PLUGIN_NAME = zellij-tab-status
 TARGET = target/wasm32-wasip1/release/zellij-tab-status.wasm
@@ -73,3 +73,12 @@ test-issue6-regression: build
 		-v "$$(pwd)/scripts:/test/scripts:ro" \
 		zellij-tab-status-test \
 		/test/scripts/issue6-regression-check.sh
+
+# Regression check for issue #6 (single raw --plugin call must apply)
+test-issue6-raw-regression: build
+	docker build -f Dockerfile.test -t zellij-tab-status-test .
+	docker run --rm \
+		-v "$$(pwd)/$(TARGET):/test/plugin.wasm:ro" \
+		-v "$$(pwd)/scripts:/test/scripts:ro" \
+		zellij-tab-status-test \
+		/test/scripts/issue6-raw-regression-check.sh

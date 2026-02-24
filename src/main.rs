@@ -58,6 +58,10 @@ struct State {
 
     /// Current plugin phase: Probing (detecting tab indices) or Ready
     phase: Phase,
+
+    /// Deferred mutating commands keyed by pane_id.
+    /// Keeps only the latest command per pane while plugin is not ready.
+    queued_mutations: BTreeMap<u32, String>,
 }
 
 register_plugin!(State);
@@ -108,6 +112,7 @@ impl ZellijPlugin for State {
                             self.tabs = tabs;
                             self.sync_pane_tab_index();
                             self.rebuild_mapping();
+                            self.flush_queued_mutations();
                             eprintln!(
                                 "[tab-status] Tab indices after probing: {:?} (next={})",
                                 self.tab_indices, self.next_tab_index
@@ -134,6 +139,7 @@ impl ZellijPlugin for State {
                 }
                 self.tabs = tabs;
                 self.rebuild_mapping();
+                self.flush_queued_mutations();
             }
             Event::PaneUpdate(panes) => {
                 eprintln!("[tab-status] PaneUpdate: {} tab entries", panes.panes.len());
@@ -143,6 +149,7 @@ impl ZellijPlugin for State {
                 // have shifted but tab_indices is stale. Sync only runs inside
                 // update_tab_indices() where tab_indices are always correct.
                 self.rebuild_mapping();
+                self.flush_queued_mutations();
             }
             Event::Timer(_) => {
                 // Timer fires during probing to detect gaps (non-existent indices).
@@ -171,6 +178,7 @@ impl ZellijPlugin for State {
                             self.phase = Phase::Ready;
                             self.sync_pane_tab_index();
                             self.rebuild_mapping();
+                            self.flush_queued_mutations();
                             return false;
                         }
 
@@ -200,17 +208,30 @@ impl ZellijPlugin for State {
             _ => None,
         };
 
+        let parsed_status = pipe_message
+            .payload
+            .as_ref()
+            .and_then(|p| serde_json::from_str::<StatusPayload>(p).ok());
+
+        // Queue mutating commands until pane->tab mapping is ready.
+        if let (Some(status), Some(raw_payload)) =
+            (parsed_status.as_ref(), pipe_message.payload.as_ref())
+        {
+            if self.should_queue_mutation(status) {
+                self.enqueue_mutation(status, raw_payload);
+                if let Some(ref pipe_id) = cli_pipe_id {
+                    cli_pipe_output(pipe_id, pipe_handler::NOT_READY_OUTPUT);
+                    unblock_cli_pipe_input(pipe_id);
+                }
+                return false;
+            }
+        }
+
         // Allow get_version and get_debug during probing, block everything else
         let is_probing = matches!(self.phase, Phase::Probing(_));
         if is_probing {
-            let is_allowed = pipe_message.payload.as_ref().is_some_and(|p| {
-                serde_json::from_str::<StatusPayload>(p)
-                    .map(|s| {
-                        s.action == "get_version"
-                            || s.action == "get_debug"
-                            || s.action == "probe_indices"
-                    })
-                    .unwrap_or(false)
+            let is_allowed = parsed_status.as_ref().is_some_and(|s| {
+                s.action == "get_version" || s.action == "get_debug" || s.action == "probe_indices"
             });
             if !is_allowed {
                 eprintln!("[tab-status] Probing in progress, signaling NOT_READY");
@@ -278,23 +299,7 @@ impl ZellijPlugin for State {
 
         let effects = pipe_handler::handle_status(&mut self.pane_to_tab, &pipe_message.payload);
 
-        for effect in &effects {
-            match effect {
-                PipeEffect::RenameTab { tab_position, name } => {
-                    // Use persistent tab index (workaround for Zellij #3535)
-                    let actual_index = self.get_tab_index(*tab_position);
-                    self.pending_renames.insert(*tab_position, name.clone());
-                    rename_tab(actual_index, name);
-                }
-                PipeEffect::PipeOutput { output } => {
-                    if let Some(ref pipe_id) = cli_pipe_id {
-                        cli_pipe_output(pipe_id, output);
-                    } else {
-                        eprintln!("[tab-status] WARNING: PipeOutput ignored (non-CLI source)");
-                    }
-                }
-            }
-        }
+        self.apply_pipe_effects(&effects, cli_pipe_id.as_ref());
 
         if let Some(ref pipe_id) = cli_pipe_id {
             unblock_cli_pipe_input(pipe_id);
@@ -312,6 +317,90 @@ enum ProbingResult {
 }
 
 impl State {
+    fn is_mutating_action(action: &str) -> bool {
+        matches!(action, "set_status" | "clear_status" | "set_name")
+    }
+
+    fn should_queue_mutation(&self, status: &StatusPayload) -> bool {
+        if !Self::is_mutating_action(status.action.as_str()) {
+            return false;
+        }
+        if matches!(self.phase, Phase::Probing(_)) {
+            return true;
+        }
+        match status.pane_id.parse::<u32>() {
+            Ok(pane_id) => !self.pane_to_tab.contains_key(&pane_id),
+            Err(_) => false,
+        }
+    }
+
+    fn enqueue_mutation(&mut self, status: &StatusPayload, raw_payload: &str) {
+        let pane_id = match status.pane_id.parse::<u32>() {
+            Ok(pane_id) => pane_id,
+            Err(_) => return,
+        };
+        self.queued_mutations
+            .insert(pane_id, raw_payload.to_string());
+        eprintln!(
+            "[tab-status] queued mutation action='{}' pane_id={} queue_size={}",
+            status.action,
+            pane_id,
+            self.queued_mutations.len()
+        );
+    }
+
+    fn apply_pipe_effects(&mut self, effects: &[PipeEffect], cli_pipe_id: Option<&String>) {
+        for effect in effects {
+            match effect {
+                PipeEffect::RenameTab { tab_position, name } => {
+                    // Use persistent tab index (workaround for Zellij #3535)
+                    let actual_index = self.get_tab_index(*tab_position);
+                    self.pending_renames.insert(*tab_position, name.clone());
+                    rename_tab(actual_index, name);
+                }
+                PipeEffect::PipeOutput { output } => {
+                    if let Some(pipe_id) = cli_pipe_id {
+                        cli_pipe_output(pipe_id, output);
+                    } else {
+                        eprintln!("[tab-status] WARNING: PipeOutput ignored (non-CLI source)");
+                    }
+                }
+            }
+        }
+    }
+
+    fn flush_queued_mutations(&mut self) {
+        if self.queued_mutations.is_empty() {
+            return;
+        }
+        if matches!(self.phase, Phase::Probing(_)) || self.pane_to_tab.is_empty() {
+            return;
+        }
+
+        let queued = std::mem::take(&mut self.queued_mutations);
+        let mut remaining = BTreeMap::new();
+
+        for (pane_id, payload) in queued {
+            if !self.pane_to_tab.contains_key(&pane_id) {
+                remaining.insert(pane_id, payload);
+                continue;
+            }
+
+            let effects = pipe_handler::handle_status(&mut self.pane_to_tab, &Some(payload));
+            self.apply_pipe_effects(&effects, None);
+        }
+
+        if !remaining.is_empty() {
+            eprintln!(
+                "[tab-status] queued mutations still pending: {}",
+                remaining.len()
+            );
+            self.queued_mutations = remaining;
+        } else {
+            eprintln!("[tab-status] flushed queued mutations");
+        }
+    }
+
     /// Track persistent tab indices across TabUpdate events.
     /// Uses pane IDs as stable anchors instead of name-based diff.
     /// Zellij bug #3535: rename_tab uses persistent 1-indexed tab index,
