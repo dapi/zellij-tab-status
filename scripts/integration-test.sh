@@ -25,6 +25,10 @@ pipe_cmd() {
     fi
 }
 
+query_tab_names() {
+    timeout 5s zellij action query-tab-names 2>/dev/null || echo ""
+}
+
 assert_eq() {
     local actual="$1" expected="$2" msg="$3"
     if [[ "$actual" == "$expected" ]]; then
@@ -126,7 +130,7 @@ wait_for_tab_contains() {
     local actual start_time
     start_time=$(date +%s)
     while true; do
-        actual=$(zellij action query-tab-names 2>/dev/null) || true
+        actual=$(query_tab_names) || true
         if [[ "$actual" == *"$needle"* ]]; then
             echo "  PASS: $msg"
             ((PASS++)) || true
@@ -148,7 +152,7 @@ wait_for_tab_count() {
     local actual start_time
     start_time=$(date +%s)
     while true; do
-        actual=$(zellij action query-tab-names 2>/dev/null | wc -l)
+        actual=$(query_tab_names | wc -l)
         if [[ "$actual" -eq "$expected" ]]; then
             return 0
         fi
@@ -162,13 +166,13 @@ wait_for_tab_count() {
 
 close_extra_tabs() {
     local tab_count
-    tab_count=$(zellij action query-tab-names 2>/dev/null | wc -l)
+    tab_count=$(query_tab_names | wc -l)
     while [[ "$tab_count" -gt 1 ]]; do
         zellij action go-to-tab "$tab_count" 2>/dev/null || true
         sleep 0.2
         zellij action close-tab 2>/dev/null || true
         sleep 0.5
-        tab_count=$(zellij action query-tab-names 2>/dev/null | wc -l)
+        tab_count=$(query_tab_names | wc -l)
     done
     zellij action go-to-tab 1 2>/dev/null || true
     sleep 0.3
@@ -236,7 +240,7 @@ result=$(pipe_cmd "{\"pane_id\":\"$PANE_ID\",\"action\":\"get_status\"}")
 assert_eq "$result" "" "get_status returns empty after clear_status"
 
 # Verify tab name is clean
-tab_names=$(zellij action query-tab-names)
+tab_names=$(query_tab_names)
 assert_contains "$tab_names" "TestTab" "query-tab-names shows clean name"
 
 # --- Test 5: set_name ---
@@ -284,7 +288,7 @@ echo "--- 8. set_status renames correct tab via plugin API ---"
 pipe_cmd "{\"pane_id\":\"$PANE_ID\",\"action\":\"set_status\",\"emoji\":\"🎯\"}"
 sleep 0.5
 
-tab_names=$(zellij action query-tab-names)
+tab_names=$(query_tab_names)
 echo "  Tab names after set_status: $tab_names"
 
 # TabA should have the status, TabB should be untouched
@@ -356,7 +360,7 @@ pipe_cmd "{\"pane_id\":\"$PANE_ID_2\",\"action\":\"set_status\",\"emoji\":\"🟢
 wait_for_status "$PANE_ID_2" "🟢" "Beta has green status"
 wait_for_tab_contains "🟢 Beta" "query-tab-names has 🟢 Beta"
 
-tab_names=$(zellij action query-tab-names)
+tab_names=$(query_tab_names)
 assert_contains "$tab_names" "Alpha" "query-tab-names has Alpha"
 assert_contains "$tab_names" "Gamma" "query-tab-names has Gamma"
 
@@ -424,7 +428,7 @@ pipe_cmd "{\"pane_id\":\"$PANE_ID\",\"action\":\"set_status\",\"emoji\":\"⭐\"}
 wait_for_tab_contains "⭐ FG" "tab1 got status from background tab"
 wait_for_status "$PANE_ID" "⭐" "get_status confirms ⭐ on tab1"
 wait_for_name "$PANE_ID_BG" "BG" "tab2 untouched after background set_status"
-tab_names=$(zellij action query-tab-names)
+tab_names=$(query_tab_names)
 assert_not_contains "$tab_names" "⭐ BG" "tab2 does not have ⭐"
 
 # Now reverse: go to tab1, set status on tab2's pane
@@ -486,7 +490,7 @@ pipe_cmd "{\"pane_id\":\"$PANE_ID_RIGHT\",\"action\":\"set_name\",\"name\":\"Rig
 wait_for_name "$PANE_ID_RIGHT" "Right" "tab3 named Right"
 
 # Verify before delete
-tab_names=$(zellij action query-tab-names)
+tab_names=$(query_tab_names)
 assert_contains "$tab_names" "Left" "before delete: Left present"
 assert_contains "$tab_names" "🔴 Mid" "before delete: 🔴 Mid present"
 
@@ -503,7 +507,7 @@ wait_for_name "$PANE_ID_RIGHT" "Right" "after delete: Right shifted to position 
 pipe_cmd "{\"pane_id\":\"$PANE_ID_RIGHT\",\"action\":\"set_status\",\"emoji\":\"🟣\"}"
 wait_for_tab_contains "🟣 Right" "rename_tab hits correct shifted tab"
 
-tab_names=$(zellij action query-tab-names)
+tab_names=$(query_tab_names)
 assert_not_contains "$tab_names" "Mid" "after delete: Mid gone"
 
 # --- Test 14: Delete last tab ---
@@ -583,7 +587,7 @@ pipe_cmd "{\"pane_id\":\"$PANE_ID\",\"action\":\"set_status\",\"emoji\":\"1️�
 pipe_cmd "{\"pane_id\":\"$PANE_ID\",\"action\":\"set_status\",\"emoji\":\"2️⃣\"}"
 wait_for_tab_contains "2️⃣ Rapid" "last set_status wins"
 wait_for_status "$PANE_ID" "2️⃣" "get_status confirms last emoji"
-tab_names=$(zellij action query-tab-names)
+tab_names=$(query_tab_names)
 assert_not_contains "$tab_names" "1️⃣" "first emoji not present"
 
 # Clear then set immediately
@@ -631,7 +635,7 @@ sleep 0.3
 pipe_cmd "{\"pane_id\":\"$PANE_T5\",\"action\":\"set_status\",\"emoji\":\"🎯\"}"
 wait_for_tab_contains "🎯 T5" "tab5 has 🎯"
 
-tab_names=$(zellij action query-tab-names)
+tab_names=$(query_tab_names)
 assert_not_contains "$tab_names" "🎯 T1" "T1 does not have 🎯"
 assert_not_contains "$tab_names" "🎯 T2" "T2 does not have 🎯"
 assert_not_contains "$tab_names" "🎯 T3" "T3 does not have 🎯"
@@ -655,7 +659,7 @@ wait_for_tab_contains "🔴 T3" "tab3 has 🔴"
 wait_for_tab_contains "🟡 T4" "tab4 has 🟡"
 wait_for_tab_contains "🟢 T5" "tab5 has 🟢"
 
-tab_names=$(zellij action query-tab-names)
+tab_names=$(query_tab_names)
 assert_contains "$tab_names" "T1" "T1 clean (no emoji prefix)"
 assert_contains "$tab_names" "T2" "T2 clean (no emoji prefix)"
 assert_not_contains "$tab_names" "🔴 T1" "T1 does not have 🔴"
@@ -701,7 +705,7 @@ wait_for_name "$PANE_D" "D" "new tab named D"
 pipe_cmd "{\"pane_id\":\"$PANE_D\",\"action\":\"set_status\",\"emoji\":\"🆕\"}"
 wait_for_tab_contains "🆕 D" "D has 🆕 status"
 
-tab_names=$(zellij action query-tab-names)
+tab_names=$(query_tab_names)
 assert_not_contains "$tab_names" "🆕 A" "A does not have 🆕"
 assert_not_contains "$tab_names" "🆕 C" "C does not have 🆕"
 assert_contains "$tab_names" "A" "A is unchanged"
@@ -808,7 +812,7 @@ wait_for_name "$PANE_G3" "G3" "G3 name restored after gap probing"
 pipe_cmd "{\"pane_id\":\"$PANE_G3\",\"action\":\"set_status\",\"emoji\":\"🎯\"}"
 wait_for_tab_contains "🎯 G3" "G3 has 🎯 after gap probing"
 
-tab_names=$(zellij action query-tab-names)
+tab_names=$(query_tab_names)
 assert_not_contains "$tab_names" "🎯 G1" "G1 does not have 🎯"
 
 # --- Summary ---
