@@ -213,9 +213,9 @@ impl ZellijPlugin for State {
                     .unwrap_or(false)
             });
             if !is_allowed {
-                eprintln!("[tab-status] Probing in progress, blocking pipe command");
+                eprintln!("[tab-status] Probing in progress, signaling NOT_READY");
                 if let Some(ref pipe_id) = cli_pipe_id {
-                    cli_pipe_output(pipe_id, "");
+                    cli_pipe_output(pipe_id, pipe_handler::NOT_READY_OUTPUT);
                     unblock_cli_pipe_input(pipe_id);
                 }
                 return false;

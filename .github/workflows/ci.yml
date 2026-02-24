@@ -92,3 +92,11 @@ jobs:
             -v "$(pwd)/scripts:/test/scripts:ro" \
             zellij-tab-status-test \
             /test/scripts/issue5-regression-check.sh
+
+      - name: Regression check for issue #6 (first CLI call applies status)
+        run: |
+          docker run --rm \
+            -v "$(pwd)/target/wasm32-wasip1/release/zellij-tab-status.wasm:/test/plugin.wasm:ro" \
+            -v "$(pwd)/scripts:/test/scripts:ro" \
+            zellij-tab-status-test \
+            /test/scripts/issue6-regression-check.sh

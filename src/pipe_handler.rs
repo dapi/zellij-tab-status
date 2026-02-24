@@ -4,6 +4,10 @@ use serde::Deserialize;
 
 use crate::status_utils::{extract_base_name, extract_status};
 
+/// Special marker returned to CLI when plugin is loaded but not ready to
+/// resolve pane->tab mapping yet. Client-side script may retry on this value.
+pub const NOT_READY_OUTPUT: &str = "__TAB_STATUS_NOT_READY__";
+
 /// Side effects returned by pure handlers, executed by main.rs via Zellij API calls
 #[derive(Debug, PartialEq)]
 pub enum PipeEffect {
@@ -92,7 +96,9 @@ pub fn handle_status(pane_to_tab: &mut PaneTabMap, payload: &Option<String>) -> 
 
     let Some((tab_position, current_name)) = get_tab_info(pane_to_tab, pane_id, "tab-status")
     else {
-        return vec![];
+        return vec![PipeEffect::PipeOutput {
+            output: NOT_READY_OUTPUT.to_string(),
+        }];
     };
     let current_name = current_name.clone();
 
@@ -423,13 +429,18 @@ mod tests {
     }
 
     #[test]
-    fn unknown_pane_returns_no_effects() {
+    fn unknown_pane_returns_not_ready_output() {
         let mut map = make_map(&[(1, 0, "Work")]);
         let effects = handle_status(
             &mut map,
             &payload(r#"{"pane_id":"999","action":"set_status","emoji":"🤖"}"#),
         );
-        assert_eq!(effects, vec![]);
+        assert_eq!(
+            effects,
+            vec![PipeEffect::PipeOutput {
+                output: NOT_READY_OUTPUT.into()
+            }]
+        );
     }
 
     #[test]

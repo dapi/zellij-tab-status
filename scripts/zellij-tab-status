@@ -17,7 +17,10 @@
 
 set -euo pipefail
 
-SCRIPT_VERSION="0.3.1"
+SCRIPT_VERSION="0.3.2"
+NOT_READY_OUTPUT="__TAB_STATUS_NOT_READY__"
+MAX_READY_RETRIES="${ZELLIJ_TAB_STATUS_MAX_READY_RETRIES:-20}"
+READY_RETRY_DELAY="${ZELLIJ_TAB_STATUS_READY_RETRY_DELAY:-0.05}"
 
 show_help() {
     cat <<'EOF'
@@ -86,14 +89,36 @@ send_to_plugin() {
         payload="{\"pane_id\": \"$pane_escaped\", \"action\": \"$action_escaped\"}"
     fi
 
-    # --plugin flag auto-launches the plugin if not already running
-    local exit_code=0
-    timeout 3s zellij pipe --plugin "$PLUGIN_PATH" -- "$payload" < /dev/null || exit_code=$?
-    if [[ $exit_code -eq 124 ]]; then
-        : # Timeout during session teardown, non-critical
-    elif [[ $exit_code -ne 0 ]]; then
-        echo "Warning: pipe command failed (exit $exit_code)" >&2
-    fi
+    # --plugin flag auto-launches the plugin if not already running.
+    # If plugin reports NOT_READY, retry a few short attempts.
+    local attempt=1
+    while true; do
+        local output="" exit_code=0
+        output=$(timeout 3s zellij pipe --plugin "$PLUGIN_PATH" -- "$payload" < /dev/null || exit_code=$?)
+
+        if [[ $exit_code -eq 124 ]]; then
+            : # Timeout during session teardown, non-critical
+        elif [[ $exit_code -ne 0 ]]; then
+            echo "Warning: pipe command failed (exit $exit_code)" >&2
+            return 0
+        fi
+
+        output="${output%$'\n'}"
+        if [[ "$output" == "$NOT_READY_OUTPUT" ]]; then
+            if (( attempt >= MAX_READY_RETRIES )); then
+                echo "Warning: plugin is not ready after ${MAX_READY_RETRIES} attempts" >&2
+                return 0
+            fi
+            attempt=$((attempt + 1))
+            sleep "$READY_RETRY_DELAY"
+            continue
+        fi
+
+        if [[ -n "$output" ]]; then
+            printf '%s\n' "$output"
+        fi
+        return 0
+    done
 }
 
 # Exit early if not in zellij

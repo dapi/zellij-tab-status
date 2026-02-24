@@ -1,23 +1,29 @@
 #!/usr/bin/env bash
 #
 # Regression check for issue #6:
-# "In a fresh session, first set_status('>') is ignored; second call applies it."
+# "In a fresh session, first zellij-tab-status '>' call is ignored."
 #
 # Runs INSIDE Docker container with on-demand plugin loading (empty load_plugins).
-# Fails if the bug pattern is observed.
+# Verifies CLI wrapper retries on NOT_READY and applies status on first user call.
 #
 set -euo pipefail
 
 PLUGIN_WASM="/test/plugin.wasm"
-PLUGIN_PATH="file:$PLUGIN_WASM"
+INSTALLED_WASM="/root/.config/zellij/plugins/zellij-tab-status.wasm"
+SCRIPT_PATH="/test/scripts/zellij-tab-status"
 ATTEMPTS="${ISSUE6_ATTEMPTS:-3}"
 
 if [[ ! -f "$PLUGIN_WASM" ]]; then
     echo "ERROR: Plugin not found at $PLUGIN_WASM"
     exit 1
 fi
+if [[ ! -x "$SCRIPT_PATH" ]]; then
+    echo "ERROR: Script not executable at $SCRIPT_PATH"
+    exit 1
+fi
 
-mkdir -p /root/.config/zellij /root/.cache/zellij
+mkdir -p /root/.config/zellij /root/.config/zellij/plugins /root/.cache/zellij
+cp "$PLUGIN_WASM" "$INSTALLED_WASM"
 cat > /root/.config/zellij/config.kdl <<EOF
 show_startup_tips false
 show_release_notes false
@@ -26,6 +32,11 @@ EOF
 
 cat > /root/.cache/zellij/permissions.kdl <<EOF
 "$PLUGIN_WASM" {
+    ReadApplicationState
+    ChangeApplicationState
+    ReadCliPipes
+}
+"$INSTALLED_WASM" {
     ReadApplicationState
     ChangeApplicationState
     ReadCliPipes
@@ -52,6 +63,8 @@ run_once() {
             wait "$zpid" >/dev/null 2>&1 || true
         fi
         unset ZELLIJ_SESSION
+        unset ZELLIJ_PANE_ID
+        unset ZELLIJ
     }
     trap cleanup RETURN
 
@@ -96,24 +109,20 @@ run_once() {
         return 1
     fi
 
-    local before after_first after_second payload
+    local before after_first
     before="$(zellij action query-tab-names 2>/dev/null || true)"
-    payload="{\"pane_id\":\"$pane_id\",\"action\":\"set_status\",\"emoji\":\">\"}"
 
-    timeout 5s zellij pipe --plugin "$PLUGIN_PATH" -- "$payload" < /dev/null > /dev/null || true
+    export ZELLIJ_PANE_ID="$pane_id"
+    export ZELLIJ=1
+    timeout 5s "$SCRIPT_PATH" ">" > /dev/null || true
     sleep 0.35
     after_first="$(zellij action query-tab-names 2>/dev/null || true)"
 
-    timeout 5s zellij pipe --plugin "$PLUGIN_PATH" -- "$payload" < /dev/null > /dev/null || true
-    sleep 0.35
-    after_second="$(zellij action query-tab-names 2>/dev/null || true)"
-
     printf 'run_%s before:\n%s\n' "$run" "$before"
     printf 'run_%s after_first:\n%s\n' "$run" "$after_first"
-    printf 'run_%s after_second:\n%s\n' "$run" "$after_second"
 
-    if ! has_status_marker "$after_first" && has_status_marker "$after_second"; then
-        echo "run_$run: reproduced (first ignored, second applied)"
+    if ! has_status_marker "$after_first"; then
+        echo "run_$run: reproduced (first user call did not apply status)"
         return 1
     fi
 
