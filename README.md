@@ -264,6 +264,16 @@ make test
 
 # Test in live Zellij session (after make install)
 make test-live
+
+# Integration tests (mode: preloaded|ondemand)
+make test-integration
+TEST_PLUGIN_MODE=ondemand make test-integration
+
+# Verify on-demand --plugin does not duplicate plugin instance
+make test-plugin-dedup
+
+# Regression check for issue #5 (currently expected to fail until fixed)
+make test-issue5-regression
 ```
 
 ## License

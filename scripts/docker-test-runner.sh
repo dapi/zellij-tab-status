@@ -8,6 +8,7 @@ set -euo pipefail
 
 PLUGIN_WASM="/test/plugin.wasm"
 SESSION="integration-test"
+TEST_PLUGIN_MODE="${TEST_PLUGIN_MODE:-preloaded}"
 
 # --- Verify plugin exists ---
 if [[ ! -f "$PLUGIN_WASM" ]]; then
@@ -17,16 +18,30 @@ if [[ ! -f "$PLUGIN_WASM" ]]; then
 fi
 
 # --- Configure Zellij ---
-# Pre-load plugin via config (avoids --plugin flag which creates duplicate instances)
 # Pre-approve permissions (no UI to approve in headless mode)
 mkdir -p /root/.config/zellij /root/.cache/zellij
 
-cat > /root/.config/zellij/config.kdl <<EOF
+case "$TEST_PLUGIN_MODE" in
+    ondemand)
+        # Real-user mode: plugin is NOT preloaded, commands use --plugin.
+        cat > /root/.config/zellij/config.kdl <<EOF
+default_layout "compact"
+EOF
+        ;;
+    preloaded)
+        # Legacy/compat mode: plugin preloaded, commands use --name.
+        cat > /root/.config/zellij/config.kdl <<EOF
 default_layout "compact"
 load_plugins {
     "file:$PLUGIN_WASM"
 }
 EOF
+        ;;
+    *)
+        echo "ERROR: Unknown TEST_PLUGIN_MODE='$TEST_PLUGIN_MODE' (expected 'ondemand' or 'preloaded')"
+        exit 1
+        ;;
+esac
 
 cat > /root/.cache/zellij/permissions.kdl <<EOF
 "$PLUGIN_WASM" {
@@ -87,7 +102,13 @@ echo "Discovered pane ID: $PANE_ID"
 
 # --- Run integration tests ---
 export ZELLIJ_PANE_ID="$PANE_ID"
-export PLUGIN_PATH="file:$PLUGIN_WASM"
+if [[ "$TEST_PLUGIN_MODE" == "ondemand" ]]; then
+    echo "Integration mode: ondemand (--plugin, no load_plugins)"
+    export PLUGIN_PATH="file:$PLUGIN_WASM"
+else
+    echo "Integration mode: preloaded (--name, with load_plugins)"
+    unset PLUGIN_PATH
+fi
 
 test_exit=0
 /test/scripts/integration-test.sh || test_exit=$?

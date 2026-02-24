@@ -29,6 +29,20 @@ query_tab_names() {
     timeout 5s zellij action query-tab-names 2>/dev/null || echo ""
 }
 
+zellij_log_file() {
+    echo "/tmp/zellij-$(id -u)/zellij-log/zellij.log"
+}
+
+plugin_load_count() {
+    local log_file
+    log_file="$(zellij_log_file)"
+    if [[ ! -f "$log_file" ]]; then
+        echo "0"
+        return 0
+    fi
+    grep -c "\\[tab-status\\] Plugin loaded" "$log_file" 2>/dev/null || echo "0"
+}
+
 assert_eq() {
     local actual="$1" expected="$2" msg="$3"
     if [[ "$actual" == "$expected" ]]; then
@@ -814,6 +828,23 @@ wait_for_tab_contains "🎯 G3" "G3 has 🎯 after gap probing"
 
 tab_names=$(query_tab_names)
 assert_not_contains "$tab_names" "🎯 G1" "G1 does not have 🎯"
+
+# --- Test 23: --plugin does not reload plugin instance ---
+echo "--- 23. --plugin instance deduplication ---"
+if [[ -n "${PLUGIN_PATH:-}" ]]; then
+    loads_before=$(plugin_load_count)
+
+    # Repeated on-demand calls must reuse the already loaded instance.
+    for _ in 1 2 3 4 5; do
+        pipe_cmd "{\"action\":\"get_version\"}" >/dev/null
+        sleep 0.2
+    done
+
+    loads_after=$(plugin_load_count)
+    assert_eq "$loads_after" "$loads_before" "--plugin repeated calls do not reload plugin"
+else
+    echo "  SKIP: PLUGIN_PATH empty (running --name mode)"
+fi
 
 # --- Summary ---
 echo ""

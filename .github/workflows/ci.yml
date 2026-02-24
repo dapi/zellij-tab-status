@@ -76,3 +76,19 @@ jobs:
             -v "$(pwd)/scripts:/test/scripts:ro" \
             zellij-tab-status-test \
             /test/scripts/docker-test-runner.sh
+
+      - name: Verify --plugin instance deduplication
+        run: |
+          docker run --rm \
+            -v "$(pwd)/target/wasm32-wasip1/release/zellij-tab-status.wasm:/test/plugin.wasm:ro" \
+            -v "$(pwd)/scripts:/test/scripts:ro" \
+            zellij-tab-status-test \
+            /test/scripts/docker-plugin-dedup-check.sh
+
+      - name: Regression check for issue #5 (floating panel input)
+        run: |
+          docker run --rm \
+            -v "$(pwd)/target/wasm32-wasip1/release/zellij-tab-status.wasm:/test/plugin.wasm:ro" \
+            -v "$(pwd)/scripts:/test/scripts:ro" \
+            zellij-tab-status-test \
+            /test/scripts/issue5-regression-check.sh
