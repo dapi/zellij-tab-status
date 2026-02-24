@@ -3605,7 +3605,7 @@ dependencies = [
 
 [[package]]
 name = "zellij-tab-status"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "serde",
  "serde_json",
