@@ -42,7 +42,7 @@ jobs:
         run: cargo clippy --target wasm32-wasip1 -- -D warnings
 
       - name: Test
-        run: cargo test --lib
+        run: cargo test
 
       - name: Build
         run: cargo build --release --target wasm32-wasip1

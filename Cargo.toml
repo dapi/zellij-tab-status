@@ -7,6 +7,12 @@ description = "Zellij plugin for managing tab status with emoji prefixes"
 license = "MIT"
 repository = "https://github.com/dapi/zellij-tab-status"
 
+[[bin]]
+name = "zellij-tab-status"
+path = "src/main.rs"
+# Plugin host symbols exist only inside Zellij runtime.
+test = false
+
 [dependencies]
 zellij-tile = "0.43.1"
 serde = { version = "1.0", features = ["derive"] }

@@ -285,7 +285,10 @@ make install
 # Clean
 make clean
 
-# Run unit tests
+# Run host tests (plain `cargo test` should be green)
+# Note: binary test harness is disabled in Cargo.toml because
+# zellij-tile host symbols are only available inside Zellij runtime.
+cargo test
 make test
 
 # Test in live Zellij session (after make install)

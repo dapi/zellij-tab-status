@@ -27,9 +27,9 @@ install-scripts:
 clean:
 	cargo clean
 
-# Run unit tests (library only, no WASM runtime needed)
+# Run host tests (bin test harness is disabled in Cargo.toml)
 test:
-	cargo test --lib
+	cargo test
 
 # Test in live Zellij session (run after installing and restarting zellij)
 test-live:
