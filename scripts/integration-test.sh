@@ -846,6 +846,94 @@ else
     echo "  SKIP: PLUGIN_PATH empty (running --name mode)"
 fi
 
+# --- Test 24: Manual rename preserved after set_status (Bug #10) ---
+echo "--- 24. Manual rename preserved after set_status ---"
+close_extra_tabs
+PANE_ID=$(discover_pane_id)
+
+# Step 1: Set a known name via plugin
+pipe_cmd "{\"pane_id\":\"$PANE_ID\",\"action\":\"set_name\",\"name\":\"OrigName\"}"
+pipe_cmd "{\"pane_id\":\"$PANE_ID\",\"action\":\"clear_status\"}"
+wait_for_name "$PANE_ID" "OrigName" "tab named OrigName"
+
+# Step 2: Set status to create a pending_rename
+pipe_cmd "{\"pane_id\":\"$PANE_ID\",\"action\":\"set_status\",\"emoji\":\"🤖\"}"
+wait_for_tab_contains "🤖 OrigName" "tab has 🤖 OrigName"
+
+# Step 3: Simulate user manually renaming the tab via Zellij UI
+# (zellij action rename-tab renames the focused tab — valid for testing user behavior)
+zellij action go-to-tab 1
+sleep 0.3
+zellij action rename-tab "UserName"
+wait_for_tab_contains "UserName" "tab shows UserName after manual rename"
+
+# Step 4: Set status again — should use "UserName", not "OrigName"
+pipe_cmd "{\"pane_id\":\"$PANE_ID\",\"action\":\"set_status\",\"emoji\":\"🔥\"}"
+sleep 0.5
+
+tab_names=$(query_tab_names)
+echo "  Tab names after set_status: $tab_names"
+assert_contains "$tab_names" "🔥 UserName" "set_status preserves user's manual rename"
+assert_not_contains "$tab_names" "OrigName" "old name OrigName is gone"
+
+# Step 5: get_name should return "UserName"
+result=$(pipe_cmd "{\"pane_id\":\"$PANE_ID\",\"action\":\"get_name\"}")
+assert_eq "$result" "UserName" "get_name returns user's manual rename"
+
+# --- Test 25: Manual rename without prior status (Bug #10 variant) ---
+echo "--- 25. Manual rename without prior status ---"
+close_extra_tabs
+PANE_ID=$(discover_pane_id)
+
+pipe_cmd "{\"pane_id\":\"$PANE_ID\",\"action\":\"set_name\",\"name\":\"PluginName\"}"
+pipe_cmd "{\"pane_id\":\"$PANE_ID\",\"action\":\"clear_status\"}"
+wait_for_name "$PANE_ID" "PluginName" "tab named PluginName"
+
+# User renames without any status set
+zellij action go-to-tab 1
+sleep 0.3
+zellij action rename-tab "ManualName"
+wait_for_tab_contains "ManualName" "tab shows ManualName"
+
+# Now set status — should work with ManualName
+pipe_cmd "{\"pane_id\":\"$PANE_ID\",\"action\":\"set_status\",\"emoji\":\"⭐\"}"
+sleep 0.5
+
+tab_names=$(query_tab_names)
+assert_contains "$tab_names" "⭐ ManualName" "set_status uses manually renamed tab"
+assert_not_contains "$tab_names" "PluginName" "plugin's old name is gone"
+
+# --- Test 26: Multi-tab manual rename (Bug #10 multi-tab) ---
+echo "--- 26. Multi-tab: manual rename on one tab, status on another ---"
+close_extra_tabs
+PANE_ID=$(discover_pane_id)
+
+pipe_cmd "{\"pane_id\":\"$PANE_ID\",\"action\":\"set_name\",\"name\":\"Left\"}"
+pipe_cmd "{\"pane_id\":\"$PANE_ID\",\"action\":\"clear_status\"}"
+wait_for_name "$PANE_ID" "Left" "tab1 named Left"
+
+# Create tab2
+zellij action new-tab
+wait_for_tab_count 2
+PANE_ID_T2=$(discover_pane_id)
+pipe_cmd "{\"pane_id\":\"$PANE_ID_T2\",\"action\":\"set_name\",\"name\":\"OldRight\"}"
+wait_for_name "$PANE_ID_T2" "OldRight" "tab2 named OldRight"
+
+# Manually rename tab2
+zellij action rename-tab "NewRight"
+wait_for_tab_contains "NewRight" "tab2 shows NewRight"
+
+# Set status on tab1 (should NOT affect tab2's name)
+zellij action go-to-tab 1
+sleep 0.3
+pipe_cmd "{\"pane_id\":\"$PANE_ID\",\"action\":\"set_status\",\"emoji\":\"🟢\"}"
+wait_for_tab_contains "🟢 Left" "tab1 has 🟢"
+
+# Set status on tab2 — should use "NewRight"
+pipe_cmd "{\"pane_id\":\"$PANE_ID_T2\",\"action\":\"set_status\",\"emoji\":\"🔵\"}"
+wait_for_tab_contains "🔵 NewRight" "tab2 status uses manual rename"
+assert_not_contains "$(query_tab_names)" "OldRight" "old OldRight name is gone"
+
 # --- Summary ---
 echo ""
 echo "==============================="
