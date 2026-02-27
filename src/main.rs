@@ -1,10 +1,12 @@
 use std::collections::{BTreeMap, HashMap};
 use zellij_tile::prelude::*;
 
-use zellij_tab_status::pipe_handler::{self, PaneTabMap, PipeEffect, StatusPayload};
+use zellij_tab_status::pipe_handler::{self, PipeEffect, StatusPayload};
 
-/// Probing marker: APL star diaeresis (monochrome, not used as regular status)
-const PROBE_MARKER: &str = "\u{235F}";
+/// Probing marker prefix: APL star diaeresis with numeric suffix.
+/// Candidate-specific markers prevent delayed TabUpdate events from being
+/// mis-attributed to the wrong candidate index.
+const PROBE_MARKER_PREFIX: &str = "\u{235F}";
 
 #[derive(Debug, Default)]
 enum Phase {
@@ -16,7 +18,7 @@ enum Phase {
 #[derive(Debug)]
 struct ProbingState {
     /// Tab names saved before probing started
-    original_names: Vec<String>,
+    original_names: BTreeMap<usize, String>,
     /// Current candidate index being probed
     candidate: u32,
     /// Found mappings: (tab_position, persistent_index)
@@ -29,19 +31,14 @@ struct ProbingState {
 
 #[derive(Default)]
 struct State {
-    /// Maps pane_id -> (tab_position, tab_name)
-    pane_to_tab: PaneTabMap,
+    /// Maps pane_id -> tab_position (0-indexed). NEVER stores tab names.
+    pane_to_tab: BTreeMap<u32, usize>,
 
     /// Current tabs info
     tabs: Vec<TabInfo>,
 
     /// Current panes info
     panes: PaneManifest,
-
-    /// Pending renames: tab_position -> expected name.
-    /// Protects against rebuild_mapping overwriting inline cache updates
-    /// with stale tab names before TabUpdate confirms the rename.
-    pending_renames: BTreeMap<usize, String>,
 
     /// Persistent Zellij tab indices for each position.
     /// Workaround for Zellij bug #3535: rename_tab() uses persistent internal
@@ -124,19 +121,38 @@ impl ZellijPlugin for State {
 
                 // Normal TabUpdate processing (Phase::Ready)
                 self.update_tab_indices(&tabs);
-                // Confirm pending renames that Zellij has applied
-                self.pending_renames.retain(|pos, pending_name| {
-                    match tabs.iter().find(|tab| tab.position == *pos) {
-                        Some(tab) => tab.name != *pending_name,
-                        None => false, // tab position gone (deleted)
+
+                // Safety net: if a delayed probe rename arrives after probing
+                // completion, restore the previous tab name immediately.
+                let leaked_markers: Vec<(usize, u32)> = tabs
+                    .iter()
+                    .filter_map(|tab| {
+                        Self::parse_probe_marker(&tab.name)
+                            .map(|candidate| (tab.position, candidate))
+                    })
+                    .collect();
+                for (position, candidate) in leaked_markers {
+                    let restore_name = self
+                        .tabs
+                        .iter()
+                        .find(|tab| tab.position == position)
+                        .map(|tab| tab.name.clone())
+                        .filter(|name| Self::parse_probe_marker(name).is_none());
+                    if let Some(name) = restore_name {
+                        eprintln!(
+                            "[tab-status] Ready: restoring leaked probe marker candidate={} position={} -> '{}'",
+                            candidate, position, name
+                        );
+                        let actual_index = self.get_tab_index(position);
+                        rename_tab(actual_index, &name);
+                    } else {
+                        eprintln!(
+                            "[tab-status] WARNING: ready-phase probe marker leaked at position={} candidate={}, but no fallback name",
+                            position, candidate
+                        );
                     }
-                });
-                if !self.pending_renames.is_empty() {
-                    eprintln!(
-                        "[tab-status] Pending renames still active: {:?}",
-                        self.pending_renames
-                    );
                 }
+
                 self.tabs = tabs;
                 self.rebuild_mapping();
                 self.flush_queued_mutations();
@@ -156,7 +172,29 @@ impl ZellijPlugin for State {
                 // If rename_tab targets a deleted index, Zellij silently ignores it
                 // and sends no TabUpdate. The timer catches this.
                 if let Phase::Probing(ref mut state) = self.phase {
-                    if !state.restoring {
+                    if state.restoring {
+                        // Recovery path: if restore rename was lost, retry it on timer.
+                        if let Some((position, _)) = state
+                            .found
+                            .iter()
+                            .find(|(_, candidate)| *candidate == state.candidate)
+                        {
+                            eprintln!(
+                                "[tab-status] Probing: timer fired while restoring candidate={}, retry restore",
+                                state.candidate
+                            );
+                            Self::restore_probe_marker(state, *position, state.candidate);
+                            set_timeout(1.0);
+                        } else {
+                            eprintln!(
+                                "[tab-status] WARNING: restoring candidate={} has no recorded position",
+                                state.candidate
+                            );
+                        }
+                    } else {
+                        if state.remaining == 0 {
+                            return false;
+                        }
                         eprintln!(
                             "[tab-status] Probing: timer fired, candidate={} is a gap (no TabUpdate received)",
                             state.candidate
@@ -182,12 +220,7 @@ impl ZellijPlugin for State {
                             return false;
                         }
 
-                        rename_tab(state.candidate, PROBE_MARKER);
-                        set_timeout(1.0);
-                        eprintln!(
-                            "[tab-status] Probing: sent probe candidate={} (after gap)",
-                            state.candidate
-                        );
+                        Self::send_probe(state.candidate, "after gap");
                     }
                 }
             }
@@ -268,8 +301,11 @@ impl ZellijPlugin for State {
                 }
                 if status.action == "probe_indices" {
                     eprintln!("[tab-status] probe_indices: starting re-probe");
-                    let original_names: Vec<String> =
-                        self.tabs.iter().map(|t| t.name.clone()).collect();
+                    let original_names: BTreeMap<usize, String> = self
+                        .tabs
+                        .iter()
+                        .map(|t| (t.position, t.name.clone()))
+                        .collect();
                     let tab_count = original_names.len();
                     if tab_count == 0 {
                         eprintln!("[tab-status] probe_indices: no tabs, nothing to probe");
@@ -286,8 +322,7 @@ impl ZellijPlugin for State {
                         remaining: tab_count,
                         restoring: false,
                     });
-                    rename_tab(1, PROBE_MARKER);
-                    set_timeout(1.0);
+                    Self::send_probe(1, "manual re-probe start");
                     if let Some(ref pipe_id) = cli_pipe_id {
                         cli_pipe_output(pipe_id, "probing started");
                         unblock_cli_pipe_input(pipe_id);
@@ -297,7 +332,9 @@ impl ZellijPlugin for State {
             }
         }
 
-        let effects = pipe_handler::handle_status(&mut self.pane_to_tab, &pipe_message.payload);
+        let tab_names = self.tab_names();
+        let effects =
+            pipe_handler::handle_status(&self.pane_to_tab, &tab_names, &pipe_message.payload);
 
         self.apply_pipe_effects(&effects, cli_pipe_id.as_ref());
 
@@ -317,6 +354,65 @@ enum ProbingResult {
 }
 
 impl State {
+    fn probe_marker(candidate: u32) -> String {
+        format!("{}{}", PROBE_MARKER_PREFIX, candidate)
+    }
+
+    fn parse_probe_marker(name: &str) -> Option<u32> {
+        name.strip_prefix(PROBE_MARKER_PREFIX)?.parse().ok()
+    }
+
+    fn send_probe(candidate: u32, context: &str) {
+        let marker = Self::probe_marker(candidate);
+        rename_tab(candidate, &marker);
+        set_timeout(1.0);
+        eprintln!(
+            "[tab-status] Probing: sent probe candidate={} ({})",
+            candidate, context
+        );
+    }
+
+    fn probe_marker_hits(tabs: &[TabInfo]) -> Vec<(usize, u32)> {
+        tabs.iter()
+            .filter_map(|tab| {
+                Self::parse_probe_marker(&tab.name).map(|candidate| (tab.position, candidate))
+            })
+            .collect()
+    }
+
+    fn record_found_candidate(state: &mut ProbingState, position: usize, candidate: u32) -> bool {
+        if state.found.iter().any(|&(_, idx)| idx == candidate) {
+            return false;
+        }
+        state.found.push((position, candidate));
+        state.remaining = state.remaining.saturating_sub(1);
+        true
+    }
+
+    fn restore_probe_marker(state: &ProbingState, position: usize, candidate: u32) {
+        match state.original_names.get(&position) {
+            Some(original) => {
+                eprintln!(
+                    "[tab-status] Probing: restoring name '{}' at index={}",
+                    original, candidate
+                );
+                rename_tab(candidate, original);
+            }
+            None => {
+                eprintln!(
+                    "[tab-status] WARNING: missing original name for position={} while restoring candidate={}",
+                    position, candidate
+                );
+            }
+        }
+    }
+
+    fn finalize_probe(state: &mut ProbingState) -> ProbingResult {
+        state.found.sort_by_key(|(pos, _)| *pos);
+        let tab_indices: Vec<u32> = state.found.iter().map(|(_, idx)| *idx).collect();
+        ProbingResult::Complete(tab_indices)
+    }
+
     fn is_mutating_action(action: &str) -> bool {
         matches!(action, "set_status" | "clear_status" | "set_name")
     }
@@ -349,13 +445,12 @@ impl State {
         );
     }
 
-    fn apply_pipe_effects(&mut self, effects: &[PipeEffect], cli_pipe_id: Option<&String>) {
+    fn apply_pipe_effects(&self, effects: &[PipeEffect], cli_pipe_id: Option<&String>) {
         for effect in effects {
             match effect {
                 PipeEffect::RenameTab { tab_position, name } => {
                     // Use persistent tab index (workaround for Zellij #3535)
                     let actual_index = self.get_tab_index(*tab_position);
-                    self.pending_renames.insert(*tab_position, name.clone());
                     rename_tab(actual_index, name);
                 }
                 PipeEffect::PipeOutput { output } => {
@@ -386,7 +481,9 @@ impl State {
                 continue;
             }
 
-            let effects = pipe_handler::handle_status(&mut self.pane_to_tab, &Some(payload));
+            let tab_names = self.tab_names();
+            let effects =
+                pipe_handler::handle_status(&self.pane_to_tab, &tab_names, &Some(payload));
             self.apply_pipe_effects(&effects, None);
         }
 
@@ -410,7 +507,10 @@ impl State {
 
         if self.tab_indices.is_empty() {
             // First TabUpdate: start probing to discover real persistent indices
-            let original_names: Vec<String> = new_tabs.iter().map(|t| t.name.clone()).collect();
+            let original_names: BTreeMap<usize, String> = new_tabs
+                .iter()
+                .map(|t| (t.position, t.name.clone()))
+                .collect();
             eprintln!(
                 "[tab-status] Starting index probing for {} tabs, names: {:?}",
                 new_count, original_names
@@ -430,8 +530,7 @@ impl State {
             });
 
             // Send first probe (timer detects gap if index 1 doesn't exist)
-            rename_tab(1, PROBE_MARKER);
-            set_timeout(1.0);
+            Self::send_probe(1, "startup");
             return;
         }
 
@@ -474,67 +573,103 @@ impl State {
 
     /// Handle one step of the probing FSM.
     fn handle_probing(tabs: &[TabInfo], state: &mut ProbingState) -> ProbingResult {
+        let current_candidate = state.candidate;
+        let marker_hits = Self::probe_marker_hits(tabs);
+
         if state.restoring {
-            // Waiting for name restoration — check that marker is gone
-            let marker_gone = !tabs.iter().any(|t| t.name == PROBE_MARKER);
-            if !marker_gone {
+            // While waiting for the current marker to disappear, we may still receive
+            // delayed marker updates from older candidates. Handle those as late hits.
+            let mut current_marker_present = false;
+            for (position, candidate) in marker_hits {
+                if candidate == current_candidate {
+                    current_marker_present = true;
+                    continue;
+                }
+
+                let is_new = Self::record_found_candidate(state, position, candidate);
+                if is_new {
+                    eprintln!(
+                        "[tab-status] Probing: late marker candidate={} at position={}",
+                        candidate, position
+                    );
+                } else {
+                    eprintln!(
+                        "[tab-status] Probing: duplicate late marker candidate={} at position={}",
+                        candidate, position
+                    );
+                }
+                Self::restore_probe_marker(state, position, candidate);
+            }
+
+            if current_marker_present {
                 eprintln!("[tab-status] Probing: still waiting for restore");
                 return ProbingResult::Continue;
             }
 
             eprintln!(
                 "[tab-status] Probing: restore confirmed, candidate was {}",
-                state.candidate
+                current_candidate
             );
             state.restoring = false;
-            state.candidate += 1;
 
             if state.remaining == 0 {
                 // All tabs found
-                state.found.sort_by_key(|(pos, _)| *pos);
-                let tab_indices: Vec<u32> = state.found.iter().map(|(_, idx)| *idx).collect();
-                return ProbingResult::Complete(tab_indices);
+                return Self::finalize_probe(state);
             }
 
+            state.candidate += 1;
+
             // Probe next candidate (timer detects gap if index doesn't exist)
-            rename_tab(state.candidate, PROBE_MARKER);
-            set_timeout(1.0);
-            eprintln!(
-                "[tab-status] Probing: sent probe candidate={}",
-                state.candidate
-            );
+            Self::send_probe(state.candidate, "after restore");
             return ProbingResult::Continue;
         }
 
-        // Looking for marker in TabUpdate
-        let marker_pos = tabs.iter().position(|t| t.name == PROBE_MARKER);
-
-        match marker_pos {
-            Some(pos) => {
-                // Found! Record mapping and restore original name
+        // Looking for probe markers in TabUpdate. Candidate-specific markers allow
+        // out-of-order / delayed TabUpdate events to be processed safely.
+        let mut found_current = false;
+        for (position, candidate) in marker_hits {
+            let is_new = Self::record_found_candidate(state, position, candidate);
+            if is_new {
                 eprintln!(
                     "[tab-status] Probing: found candidate={} at position={}",
-                    state.candidate, pos
+                    candidate, position
                 );
-                state.found.push((pos, state.candidate));
-                state.remaining -= 1;
-
-                let original = &state.original_names[pos];
+            } else {
                 eprintln!(
-                    "[tab-status] Probing: restoring name '{}' at index={}",
-                    original, state.candidate
+                    "[tab-status] Probing: duplicate marker candidate={} at position={}",
+                    candidate, position
                 );
-                rename_tab(state.candidate, original);
-                state.restoring = true;
-
-                ProbingResult::Continue
             }
-            None => {
-                // Marker not found yet — Zellij may not have processed rename_tab.
-                // Gap detection is handled by Timer event (no TabUpdate = gap).
-                ProbingResult::Continue
+            Self::restore_probe_marker(state, position, candidate);
+            if candidate == current_candidate {
+                found_current = true;
+            } else {
+                eprintln!(
+                    "[tab-status] Probing: candidate={} arrived while waiting for candidate={}",
+                    candidate, current_candidate
+                );
             }
         }
+
+        if found_current {
+            state.restoring = true;
+            return ProbingResult::Continue;
+        }
+
+        // If all indices were discovered out-of-order, complete as soon as no marker
+        // remains visible in the current TabUpdate snapshot.
+        if state.remaining == 0 {
+            let marker_still_visible = tabs
+                .iter()
+                .any(|tab| Self::parse_probe_marker(&tab.name).is_some());
+            if !marker_still_visible {
+                return Self::finalize_probe(state);
+            }
+        }
+
+        // Current marker not found yet — Zellij may not have processed rename_tab.
+        // Gap detection is handled by Timer event (no TabUpdate = gap).
+        ProbingResult::Continue
     }
 
     /// Rebuild pane_id -> persistent tab_index mapping from current tab_indices + PaneManifest.
@@ -561,27 +696,21 @@ impl State {
             .unwrap_or((position as u32) + 1)
     }
 
+    /// Build tab names from current tabs (always fresh, never cached).
+    fn tab_names(&self) -> Vec<String> {
+        self.tabs.iter().map(|t| t.name.clone()).collect()
+    }
+
     fn rebuild_mapping(&mut self) {
         self.pane_to_tab.clear();
 
         for tab in self.tabs.iter() {
-            // Use pending rename if available (protects against stale self.tabs)
-            let tab_name = self
-                .pending_renames
-                .get(&tab.position)
-                .cloned()
-                .unwrap_or_else(|| tab.name.clone());
-
             if let Some(pane_list) = self.panes.panes.get(&tab.position) {
                 for pane in pane_list {
-                    // Skip plugin panes
                     if pane.is_plugin {
                         continue;
                     }
-
-                    // Store tab.position (0-indexed) for pane-to-tab mapping
-                    self.pane_to_tab
-                        .insert(pane.id, (tab.position, tab_name.clone()));
+                    self.pane_to_tab.insert(pane.id, tab.position);
                 }
             }
         }

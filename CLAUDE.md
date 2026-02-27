@@ -95,8 +95,7 @@ For integration tests in Docker, the plugin IS pre-loaded via `load_plugins` in 
 
 ### State Management
 
-- `pane_to_tab: PaneTabMap` (alias for `BTreeMap<u32, (usize, String)>`) — maps pane_id to (tab_position, tab_name). Rebuilt on every `TabUpdate` or `PaneUpdate` event
-- `pending_renames: BTreeMap<usize, String>` — protects against `rebuild_mapping` overwriting inline cache updates with stale tab names before `TabUpdate` confirms a rename
+- `pane_to_tab: BTreeMap<u32, usize>` — maps pane_id → tab_position (0-indexed). Must NOT store tab names — names are always read fresh from `self.tabs` (latest TabUpdate). Rebuilt on every `TabUpdate` or `PaneUpdate` event
 - `tab_indices: Vec<u32>` — maps tab position → persistent Zellij tab index (workaround for Zellij bug #3535)
 - `next_tab_index: u32` — counter for assigning indices to newly created tabs
 - `pane_tab_index: HashMap<u32, u32>` — maps pane_id → persistent tab_index. Pane IDs are stable anchors for identifying tabs across structural changes (deletions/creations)
