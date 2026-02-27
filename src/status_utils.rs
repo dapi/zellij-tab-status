@@ -1,5 +1,13 @@
 use unicode_segmentation::UnicodeSegmentation;
 
+/// Split text into grapheme clusters.
+pub fn split_graphemes(value: &str) -> Vec<String> {
+    value
+        .graphemes(true)
+        .map(std::string::ToString::to_string)
+        .collect()
+}
+
 /// Extract base name from tab name.
 /// Status is ANY first grapheme cluster followed by a space.
 /// Handles complex emoji like flags and skin tones.
@@ -126,5 +134,17 @@ mod tests {
     #[test]
     fn test_status_empty() {
         assert_eq!(extract_status(""), "");
+    }
+
+    // ==================== split_graphemes tests ====================
+
+    #[test]
+    fn test_split_graphemes_for_multi_frame_status() {
+        assert_eq!(split_graphemes("🔴🟡"), vec!["🔴", "🟡"]);
+    }
+
+    #[test]
+    fn test_split_graphemes_handles_complex_emoji() {
+        assert_eq!(split_graphemes("👨‍👩‍👧🟢"), vec!["👨‍👩‍👧", "🟢"]);
     }
 }

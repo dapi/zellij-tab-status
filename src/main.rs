@@ -1,7 +1,10 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::time::Instant;
 use zellij_tile::prelude::*;
 
+use zellij_tab_status::blink_runtime::{normalize_delay_ms, BlinkRuntime};
 use zellij_tab_status::pipe_handler::{self, PaneTabMap, PipeEffect, StatusPayload};
+use zellij_tab_status::status_utils::{extract_base_name, split_graphemes};
 
 /// Probing marker: APL star diaeresis (monochrome, not used as regular status)
 const PROBE_MARKER: &str = "\u{235F}";
@@ -27,7 +30,6 @@ struct ProbingState {
     restoring: bool,
 }
 
-#[derive(Default)]
 struct State {
     /// Maps pane_id -> (tab_position, tab_name)
     pane_to_tab: PaneTabMap,
@@ -62,6 +64,38 @@ struct State {
     /// Deferred mutating commands keyed by pane_id.
     /// Keeps only the latest command per pane while plugin is not ready.
     queued_mutations: BTreeMap<u32, String>,
+
+    /// Runtime state for blinking/rotating statuses.
+    blink_runtime: BlinkRuntime,
+
+    /// Monotonic clock anchor for blink scheduling.
+    started_at: Instant,
+
+    /// Whether current session has at least one connected client.
+    is_session_active: bool,
+
+    /// Last scheduled blink deadline to avoid redundant timer re-scheduling.
+    scheduled_blink_deadline_ms: Option<u64>,
+}
+
+impl Default for State {
+    fn default() -> Self {
+        Self {
+            pane_to_tab: PaneTabMap::default(),
+            tabs: Vec::default(),
+            panes: PaneManifest::default(),
+            pending_renames: BTreeMap::default(),
+            tab_indices: Vec::default(),
+            next_tab_index: u32::default(),
+            pane_tab_index: HashMap::default(),
+            phase: Phase::default(),
+            queued_mutations: BTreeMap::default(),
+            blink_runtime: BlinkRuntime::default(),
+            started_at: Instant::now(),
+            is_session_active: true,
+            scheduled_blink_deadline_ms: None,
+        }
+    }
 }
 
 register_plugin!(State);
@@ -82,6 +116,7 @@ impl ZellijPlugin for State {
         subscribe(&[
             EventType::TabUpdate,
             EventType::PaneUpdate,
+            EventType::SessionUpdate,
             EventType::Timer,
         ]);
     }
@@ -111,8 +146,10 @@ impl ZellijPlugin for State {
                             self.phase = Phase::Ready;
                             self.tabs = tabs;
                             self.sync_pane_tab_index();
+                            self.retain_blink_states_for_existing_tabs();
                             self.rebuild_mapping();
                             self.flush_queued_mutations();
+                            self.schedule_next_blink_timer();
                             eprintln!(
                                 "[tab-status] Tab indices after probing: {:?} (next={})",
                                 self.tab_indices, self.next_tab_index
@@ -144,12 +181,24 @@ impl ZellijPlugin for State {
             Event::PaneUpdate(panes) => {
                 eprintln!("[tab-status] PaneUpdate: {} tab entries", panes.panes.len());
                 self.panes = panes;
+                if !matches!(self.phase, Phase::Probing(_))
+                    && !self.tabs.is_empty()
+                    && !self.tab_indices.is_empty()
+                {
+                    // PaneUpdate can arrive after TabUpdate and carry the stable pane anchors
+                    // needed to reconcile tab index order on tab reordering.
+                    let current_tabs = self.tabs.clone();
+                    self.update_tab_indices(&current_tabs);
+                }
                 // Note: sync_pane_tab_index is NOT called here because PaneUpdate
                 // can arrive before TabUpdate during tab deletion, when pane positions
                 // have shifted but tab_indices is stale. Sync only runs inside
                 // update_tab_indices() where tab_indices are always correct.
                 self.rebuild_mapping();
                 self.flush_queued_mutations();
+            }
+            Event::SessionUpdate(sessions, _) => {
+                self.update_session_activity(&sessions);
             }
             Event::Timer(_) => {
                 // Timer fires during probing to detect gaps (non-existent indices).
@@ -177,8 +226,10 @@ impl ZellijPlugin for State {
                                 self.tab_indices.iter().max().copied().unwrap_or(0) + 1;
                             self.phase = Phase::Ready;
                             self.sync_pane_tab_index();
+                            self.retain_blink_states_for_existing_tabs();
                             self.rebuild_mapping();
                             self.flush_queued_mutations();
+                            self.schedule_next_blink_timer();
                             return false;
                         }
 
@@ -189,6 +240,9 @@ impl ZellijPlugin for State {
                             state.candidate
                         );
                     }
+                } else {
+                    self.scheduled_blink_deadline_ms = None;
+                    self.tick_blinking();
                 }
             }
             _ => {}
@@ -286,6 +340,7 @@ impl ZellijPlugin for State {
                         remaining: tab_count,
                         restoring: false,
                     });
+                    self.scheduled_blink_deadline_ms = None;
                     rename_tab(1, PROBE_MARKER);
                     set_timeout(1.0);
                     if let Some(ref pipe_id) = cli_pipe_id {
@@ -300,6 +355,9 @@ impl ZellijPlugin for State {
         let effects = pipe_handler::handle_status(&mut self.pane_to_tab, &pipe_message.payload);
 
         self.apply_pipe_effects(&effects, cli_pipe_id.as_ref());
+        if let Some(status) = parsed_status.as_ref() {
+            self.update_blink_runtime(status, &effects);
+        }
 
         if let Some(ref pipe_id) = cli_pipe_id {
             unblock_cli_pipe_input(pipe_id);
@@ -386,8 +444,12 @@ impl State {
                 continue;
             }
 
+            let parsed_status = serde_json::from_str::<StatusPayload>(&payload).ok();
             let effects = pipe_handler::handle_status(&mut self.pane_to_tab, &Some(payload));
             self.apply_pipe_effects(&effects, None);
+            if let Some(status) = parsed_status.as_ref() {
+                self.update_blink_runtime(status, &effects);
+            }
         }
 
         if !remaining.is_empty() {
@@ -420,6 +482,7 @@ impl State {
             self.tab_indices = (1..=new_count as u32).collect();
             self.next_tab_index = new_count as u32 + 1;
             self.sync_pane_tab_index();
+            self.retain_blink_states_for_existing_tabs();
 
             self.phase = Phase::Probing(ProbingState {
                 original_names,
@@ -428,6 +491,7 @@ impl State {
                 remaining: new_count,
                 restoring: false,
             });
+            self.scheduled_blink_deadline_ms = None;
 
             // Send first probe (timer detects gap if index 1 doesn't exist)
             rename_tab(1, PROBE_MARKER);
@@ -435,15 +499,8 @@ impl State {
             return;
         }
 
-        if new_count == self.tab_indices.len() {
-            // No structural change (just renames), sync pane mapping
-            self.sync_pane_tab_index();
-            return;
-        }
-
-        // Structural change: find surviving tabs by pane_id lookup.
-        // Only trust pane_tab_index entries whose index exists in current tab_indices
-        // (stale entries from deleted tabs would cause wrong index assignment).
+        let previous_indices = self.tab_indices.clone();
+        let mut used_indices = HashSet::new();
         let mut new_indices = Vec::with_capacity(new_count);
         for pos in 0..new_count {
             let known = self.panes.panes.get(&pos).and_then(|panes| {
@@ -451,25 +508,45 @@ impl State {
                     self.pane_tab_index
                         .get(&p.id)
                         .copied()
-                        .filter(|idx| self.tab_indices.contains(idx))
+                        .filter(|idx| previous_indices.contains(idx))
+                        .filter(|idx| !used_indices.contains(idx))
                 })
             });
             match known {
-                Some(idx) => new_indices.push(idx),
+                Some(idx) => {
+                    used_indices.insert(idx);
+                    new_indices.push(idx);
+                }
                 None => {
-                    new_indices.push(self.next_tab_index);
-                    self.next_tab_index += 1;
+                    let positional_fallback = previous_indices
+                        .get(pos)
+                        .copied()
+                        .filter(|idx| !used_indices.contains(idx));
+                    if let Some(idx) = positional_fallback {
+                        used_indices.insert(idx);
+                        new_indices.push(idx);
+                    } else {
+                        let new_idx = self.next_tab_index;
+                        self.next_tab_index = self.next_tab_index.saturating_add(1);
+                        used_indices.insert(new_idx);
+                        new_indices.push(new_idx);
+                    }
                 }
             }
         }
 
+        let changed = new_indices != self.tab_indices;
         self.tab_indices = new_indices;
-        self.next_tab_index = self.tab_indices.iter().max().copied().unwrap_or(0) + 1;
+        let next_from_seen = self.tab_indices.iter().max().copied().unwrap_or(0) + 1;
+        self.next_tab_index = self.next_tab_index.max(next_from_seen);
         self.sync_pane_tab_index();
-        eprintln!(
-            "[tab-status] Tab indices updated: {:?} (next={})",
-            self.tab_indices, self.next_tab_index
-        );
+        self.retain_blink_states_for_existing_tabs();
+        if changed {
+            eprintln!(
+                "[tab-status] Tab indices updated: {:?} (next={})",
+                self.tab_indices, self.next_tab_index
+            );
+        }
     }
 
     /// Handle one step of the probing FSM.
@@ -559,6 +636,132 @@ impl State {
             .get(position)
             .copied()
             .unwrap_or((position as u32) + 1)
+    }
+
+    fn now_ms(&self) -> u64 {
+        self.started_at
+            .elapsed()
+            .as_millis()
+            .min(u128::from(u64::MAX)) as u64
+    }
+
+    fn update_session_activity(&mut self, sessions: &[SessionInfo]) {
+        let maybe_current = sessions.iter().find(|s| s.is_current_session);
+        let is_active_now = maybe_current.map_or(true, |s| s.connected_clients > 0);
+
+        if is_active_now == self.is_session_active {
+            return;
+        }
+
+        self.is_session_active = is_active_now;
+        let now_ms = self.now_ms();
+        if is_active_now {
+            self.blink_runtime.resume(now_ms);
+            self.schedule_next_blink_timer();
+        } else {
+            self.blink_runtime.pause(now_ms);
+            self.scheduled_blink_deadline_ms = None;
+        }
+    }
+
+    fn tab_positions_by_index(&self) -> HashMap<u32, usize> {
+        self.tab_indices
+            .iter()
+            .enumerate()
+            .map(|(position, tab_index)| (*tab_index, position))
+            .collect()
+    }
+
+    fn retain_blink_states_for_existing_tabs(&mut self) {
+        self.blink_runtime
+            .retain_active_tab_indices(&self.tab_indices);
+    }
+
+    fn schedule_next_blink_timer(&mut self) {
+        if matches!(self.phase, Phase::Probing(_)) || !self.is_session_active {
+            self.scheduled_blink_deadline_ms = None;
+            return;
+        }
+
+        let now_ms = self.now_ms();
+        let Some(delay_ms) = self.blink_runtime.next_delay_ms(now_ms) else {
+            self.scheduled_blink_deadline_ms = None;
+            return;
+        };
+        let deadline_ms = now_ms.saturating_add(delay_ms);
+
+        if self
+            .scheduled_blink_deadline_ms
+            .is_some_and(|scheduled| scheduled <= deadline_ms)
+        {
+            return;
+        }
+
+        self.scheduled_blink_deadline_ms = Some(deadline_ms);
+        set_timeout(delay_ms as f64 / 1000.0);
+    }
+
+    fn update_tab_cache_name_by_position(&mut self, tab_position: usize, name: &str) {
+        for (position, cached_name) in self.pane_to_tab.values_mut() {
+            if *position == tab_position {
+                *cached_name = name.to_string();
+            }
+        }
+    }
+
+    fn update_blink_runtime(&mut self, status: &StatusPayload, effects: &[PipeEffect]) {
+        let renamed_tab = effects.iter().find_map(|effect| match effect {
+            PipeEffect::RenameTab { tab_position, name } => Some((*tab_position, name)),
+            PipeEffect::PipeOutput { .. } => None,
+        });
+
+        let Some((tab_position, renamed_name)) = renamed_tab else {
+            return;
+        };
+        let tab_index = self.get_tab_index(tab_position);
+
+        match status.action.as_str() {
+            "set_status" => {
+                let frames = split_graphemes(&status.emoji);
+                if frames.len() >= 2 {
+                    let delay_ms = normalize_delay_ms(status.delay_ms);
+                    self.blink_runtime.start(
+                        tab_index,
+                        extract_base_name(renamed_name).to_string(),
+                        frames,
+                        delay_ms,
+                        self.now_ms(),
+                    );
+                } else {
+                    self.blink_runtime.stop(tab_index);
+                }
+            }
+            "clear_status" => {
+                self.blink_runtime.stop(tab_index);
+            }
+            "set_name" => {
+                self.blink_runtime
+                    .update_base_name(tab_index, extract_base_name(renamed_name).to_string());
+            }
+            _ => {}
+        }
+
+        self.schedule_next_blink_timer();
+    }
+
+    fn tick_blinking(&mut self) {
+        let now_ms = self.now_ms();
+        let tab_positions = self.tab_positions_by_index();
+        let commands = self.blink_runtime.tick(now_ms, &tab_positions);
+
+        for command in commands {
+            self.pending_renames
+                .insert(command.tab_position, command.name.clone());
+            rename_tab(command.tab_index, &command.name);
+            self.update_tab_cache_name_by_position(command.tab_position, &command.name);
+        }
+
+        self.schedule_next_blink_timer();
     }
 
     fn rebuild_mapping(&mut self) {

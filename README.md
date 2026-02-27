@@ -7,6 +7,7 @@ Zellij plugin for managing tab status with emoji prefixes.
 ## Features
 
 - **Set/clear emoji status** on any tab by pane_id
+- **Built-in blinking/rotation** via multi-symbol `set_status` (no external shell loop)
 - **Rename tabs** without losing the emoji status prefix
 - **Query current status**, base name, or plugin version programmatically
 - **Atomic operations** — no race conditions when updating status
@@ -58,6 +59,12 @@ zellij pipe --plugin "$PLUGIN_PATH" -- '{"pane_id": "'$ZELLIJ_PANE_ID'", "action
 
 # Change status: "🤖 my-tab" → "✅ my-tab"
 zellij pipe --plugin "$PLUGIN_PATH" -- '{"pane_id": "'$ZELLIJ_PANE_ID'", "action": "set_status", "emoji": "✅"}'
+
+# Built-in blinking: rotates between frames every 500ms (default)
+zellij pipe --plugin "$PLUGIN_PATH" -- '{"pane_id": "'$ZELLIJ_PANE_ID'", "action": "set_status", "emoji": "🔴🟡"}'
+
+# Override blink delay to 350ms
+zellij pipe --plugin "$PLUGIN_PATH" -- '{"pane_id": "'$ZELLIJ_PANE_ID'", "action": "set_status", "emoji": "🟥🟨🟩", "delay_ms": 350}'
 
 # Clear status: "✅ my-tab" → "my-tab"
 zellij pipe --plugin "$PLUGIN_PATH" -- '{"pane_id": "'$ZELLIJ_PANE_ID'", "action": "clear_status"}'
@@ -221,16 +228,22 @@ JSON payload with `pane_id` and `action`:
 
 | Action | Required Fields | Description |
 |--------|-----------------|-------------|
-| `set_status` | `emoji` | Set emoji prefix on tab |
+| `set_status` | `emoji` | Set status prefix on tab. 1 grapheme = static, 2+ graphemes = blink/rotate |
 | `clear_status` | — | Remove emoji prefix |
 | `get_status` | — | Output current emoji to stdout |
 | `get_name` | — | Output base name (without emoji) to stdout |
 | `set_name` | `name` | Set tab name, preserving emoji prefix |
 | `get_version` | — | Output plugin version to stdout |
 
+`set_status` optional field:
+
+- `delay_ms` — blink/rotation interval in milliseconds for multi-grapheme statuses (default `500`)
+
 ### Status Format
 
 Status = first grapheme cluster + space.
+
+If `set_status.emoji` contains multiple grapheme clusters, only one grapheme is shown at a time and frames rotate on the configured timer.
 
 | Tab Name | Status | Base Name |
 |----------|--------|-----------|

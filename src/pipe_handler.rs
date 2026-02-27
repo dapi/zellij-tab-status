@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use serde::Deserialize;
 
-use crate::status_utils::{extract_base_name, extract_status};
+use crate::status_utils::{extract_base_name, extract_status, split_graphemes};
 
 /// Special marker returned to CLI when plugin is loaded but not ready to
 /// resolve pane->tab mapping yet. Client-side script may retry on this value.
@@ -22,6 +22,8 @@ pub struct StatusPayload {
     pub action: String,
     #[serde(default)]
     pub emoji: String,
+    #[serde(default)]
+    pub delay_ms: Option<u64>,
     #[serde(default)]
     pub name: String,
 }
@@ -110,7 +112,12 @@ pub fn handle_status(pane_to_tab: &mut PaneTabMap, payload: &Option<String>) -> 
                 eprintln!("[tab-status] ERROR: emoji is required for 'set_status' action");
                 return vec![];
             }
-            let new_name = format!("{} {}", status.emoji, base_name);
+            let frames = split_graphemes(&status.emoji);
+            let Some(first_frame) = frames.first() else {
+                eprintln!("[tab-status] ERROR: emoji is required for 'set_status' action");
+                return vec![];
+            };
+            let new_name = format!("{} {}", first_frame, base_name);
             eprintln!(
                 "[tab-status] set_status on tab position {}: '{}' -> '{}'",
                 tab_position, current_name, new_name
@@ -237,6 +244,32 @@ mod tests {
                 name: "✅ Work".into()
             }]
         );
+    }
+
+    #[test]
+    fn set_status_with_multiple_graphemes_uses_first_frame() {
+        let mut map = make_map(&[(1, 0, "Work")]);
+        let effects = handle_status(
+            &mut map,
+            &payload(r#"{"pane_id":"1","action":"set_status","emoji":"🔴🟡"}"#),
+        );
+        assert_eq!(
+            effects,
+            vec![PipeEffect::RenameTab {
+                tab_position: 0,
+                name: "🔴 Work".into()
+            }]
+        );
+        assert_eq!(map.get(&1).unwrap().1, "🔴 Work");
+    }
+
+    #[test]
+    fn status_payload_parses_optional_delay_ms() {
+        let parsed: StatusPayload = serde_json::from_str(
+            r#"{"pane_id":"1","action":"set_status","emoji":"🔴🟡","delay_ms":350}"#,
+        )
+        .unwrap();
+        assert_eq!(parsed.delay_ms, Some(350));
     }
 
     #[test]
