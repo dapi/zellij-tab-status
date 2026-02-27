@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, HashMap};
 use zellij_tile::prelude::*;
 
 use zellij_tab_status::pipe_handler::{self, PipeEffect, StatusPayload};
+use zellij_tab_status::probing::{self, ProbingState, TimerResult};
 
 /// Probing marker prefix: APL star diaeresis with numeric suffix.
 /// Candidate-specific markers prevent delayed TabUpdate events from being
@@ -13,20 +14,6 @@ enum Phase {
     Probing(ProbingState),
     #[default]
     Ready,
-}
-
-#[derive(Debug)]
-struct ProbingState {
-    /// Tab names saved before probing started
-    original_names: BTreeMap<usize, String>,
-    /// Current candidate index being probed
-    candidate: u32,
-    /// Found mappings: (tab_position, persistent_index)
-    found: Vec<(usize, u32)>,
-    /// How many tabs still need to be found
-    remaining: usize,
-    /// true = waiting for name restoration after marker was found
-    restoring: bool,
 }
 
 #[derive(Default)]
@@ -172,42 +159,22 @@ impl ZellijPlugin for State {
                 // If rename_tab targets a deleted index, Zellij silently ignores it
                 // and sends no TabUpdate. The timer catches this.
                 if let Phase::Probing(ref mut state) = self.phase {
-                    if state.restoring {
-                        // Recovery path: if restore rename was lost, retry it on timer.
-                        if let Some((position, _)) = state
-                            .found
-                            .iter()
-                            .find(|(_, candidate)| *candidate == state.candidate)
-                        {
-                            eprintln!(
-                                "[tab-status] Probing: timer fired while restoring candidate={}, retry restore",
-                                state.candidate
-                            );
-                            Self::restore_probe_marker(state, *position, state.candidate);
+                    match probing::handle_probe_timer(state) {
+                        TimerResult::Retry => {
+                            // Restore retry: re-send restore rename
+                            if let Some((position, _)) = state
+                                .found
+                                .iter()
+                                .find(|(_, candidate)| *candidate == state.candidate)
+                            {
+                                Self::restore_probe_marker(state, *position, state.candidate);
+                            }
                             set_timeout(1.0);
-                        } else {
-                            eprintln!(
-                                "[tab-status] WARNING: restoring candidate={} has no recorded position",
-                                state.candidate
-                            );
                         }
-                    } else {
-                        if state.remaining == 0 {
-                            return false;
+                        TimerResult::AdvanceProbe(next) => {
+                            Self::send_probe(next, "after timer advance");
                         }
-                        eprintln!(
-                            "[tab-status] Probing: timer fired, candidate={} is a gap (no TabUpdate received)",
-                            state.candidate
-                        );
-                        state.candidate += 1;
-
-                        // Safety: prevent infinite loop
-                        let max_candidate = state.original_names.len() as u32 * 3;
-                        if state.candidate > max_candidate && state.remaining > 0 {
-                            eprintln!(
-                                "[tab-status] WARNING: probing exceeded limit (candidate={}), falling back to [1..N]",
-                                state.candidate
-                            );
+                        TimerResult::Fallback => {
                             let n = state.original_names.len();
                             let fallback: Vec<u32> = (1..=n as u32).collect();
                             self.tab_indices = fallback;
@@ -217,10 +184,8 @@ impl ZellijPlugin for State {
                             self.sync_pane_tab_index();
                             self.rebuild_mapping();
                             self.flush_queued_mutations();
-                            return false;
                         }
-
-                        Self::send_probe(state.candidate, "after gap");
+                        TimerResult::Ignore => {}
                     }
                 }
             }
@@ -315,13 +280,7 @@ impl ZellijPlugin for State {
                         }
                         return false;
                     }
-                    self.phase = Phase::Probing(ProbingState {
-                        original_names,
-                        candidate: 1,
-                        found: Vec::new(),
-                        remaining: tab_count,
-                        restoring: false,
-                    });
+                    self.phase = Phase::Probing(ProbingState::new(original_names));
                     Self::send_probe(1, "manual re-probe start");
                     if let Some(ref pipe_id) = cli_pipe_id {
                         cli_pipe_output(pipe_id, "probing started");
@@ -521,13 +480,7 @@ impl State {
             self.next_tab_index = new_count as u32 + 1;
             self.sync_pane_tab_index();
 
-            self.phase = Phase::Probing(ProbingState {
-                original_names,
-                candidate: 1,
-                found: Vec::new(),
-                remaining: new_count,
-                restoring: false,
-            });
+            self.phase = Phase::Probing(ProbingState::new(original_names));
 
             // Send first probe (timer detects gap if index 1 doesn't exist)
             Self::send_probe(1, "startup");
@@ -611,6 +564,7 @@ impl State {
                 current_candidate
             );
             state.restoring = false;
+            state.restore_retries = 0;
 
             if state.remaining == 0 {
                 // All tabs found
@@ -653,6 +607,7 @@ impl State {
 
         if found_current {
             state.restoring = true;
+            state.restore_retries = 0;
             return ProbingResult::Continue;
         }
 
