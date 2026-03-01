@@ -392,7 +392,13 @@ impl State {
     fn enqueue_mutation(&mut self, status: &StatusPayload, raw_payload: &str) {
         let pane_id = match status.pane_id.parse::<u32>() {
             Ok(pane_id) => pane_id,
-            Err(_) => return,
+            Err(e) => {
+                eprintln!(
+                    "[tab-status] enqueue_mutation: invalid pane_id='{}' action='{}': {}",
+                    status.pane_id, status.action, e
+                );
+                return;
+            }
         };
         self.queued_mutations
             .insert(pane_id, raw_payload.to_string());
