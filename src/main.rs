@@ -146,10 +146,13 @@ impl ZellijPlugin for State {
                         let actual_index = self.get_tab_index(position);
                         rename_tab(actual_index, &name);
                     } else {
+                        let fallback = format!("Tab {}", position + 1);
                         eprintln!(
-                            "[tab-status] WARNING: ready-phase probe marker leaked at position={} candidate={}, but no fallback name",
-                            position, candidate
+                            "[tab-status] Ready: no fallback for leaked probe marker candidate={} position={}, using generic name '{}'",
+                            candidate, position, fallback
                         );
+                        let actual_index = self.get_tab_index(position);
+                        rename_tab(actual_index, &fallback);
                     }
                 }
 
