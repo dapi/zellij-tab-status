@@ -7,6 +7,7 @@ use crate::status_utils::{extract_base_name, extract_status};
 /// Special marker returned to CLI when plugin is loaded but not ready to
 /// resolve pane->tab mapping yet. Client-side script may retry on this value.
 pub const NOT_READY_OUTPUT: &str = "__TAB_STATUS_NOT_READY__";
+pub const INVALID_PANE_ID_OUTPUT: &str = "__TAB_STATUS_INVALID_PANE_ID__";
 
 /// Side effects returned by pure handlers, executed by main.rs via Zellij API calls
 #[derive(Debug, PartialEq)]
@@ -88,7 +89,9 @@ pub fn handle_status(
     }
 
     let Some(pane_id) = parse_pane_id(&status.pane_id, "tab-status") else {
-        return vec![];
+        return vec![PipeEffect::PipeOutput {
+            output: INVALID_PANE_ID_OUTPUT.to_string(),
+        }];
     };
 
     let Some(tab_position) = get_tab_position(pane_to_tab, pane_id, "tab-status") else {
@@ -471,15 +474,24 @@ mod tests {
     }
 
     #[test]
-    fn invalid_pane_id_returns_no_effects() {
+    fn invalid_pane_id_returns_invalid_pane_id_output() {
         let map = make_map(&[(1, 0)]);
         let tab = names(&["Work"]);
-        let effects = handle_status(
-            &map,
-            &tab,
-            &payload(r#"{"pane_id":"abc","action":"set_status","emoji":"🤖"}"#),
-        );
-        assert_eq!(effects, vec![]);
+        for bad_id in &["abc", "", "4294967296", "-1"] {
+            let json = format!(
+                r#"{{"pane_id":"{}","action":"set_status","emoji":"🤖"}}"#,
+                bad_id
+            );
+            let effects = handle_status(&map, &tab, &payload(&json));
+            assert_eq!(
+                effects,
+                vec![PipeEffect::PipeOutput {
+                    output: INVALID_PANE_ID_OUTPUT.into()
+                }],
+                "pane_id='{}' should return INVALID_PANE_ID_OUTPUT",
+                bad_id
+            );
+        }
     }
 
     #[test]
