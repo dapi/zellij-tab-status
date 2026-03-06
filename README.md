@@ -197,7 +197,7 @@ This plugin works with [zellij-tab-claude-status](https://github.com/dapi/claude
 
 Other Zellij plugins for Claude Code integration:
 
-| | zellij-tab-status | zellaude | zellij-attention |
+| | zellij-tab-status | [zellaude](https://github.com/ishefi/zellaude) | [zellij-attention](https://github.com/KiryuuLight/zellij-attention) |
 |---|---|---|---|
 | **Тип** | Модификатор имён | Tab bar replacement | Модификатор имён |
 | **Совместимость с tab bar** | ✅ Любой | ❌ Полная замена | ✅ Любой |
