@@ -30,7 +30,7 @@ ldd /usr/local/bin/zellij 2>&1 | grep "not found" && echo "WARNING: missing libr
 
 # Start Zellij headlessly (script provides PTY)
 echo "Starting Zellij session '$SESSION'..."
-script -qfc "zellij --session $SESSION options --disable-mouse-mode" /dev/null > /tmp/zellij-start.log 2>&1 &
+script -qfc "zellij --session $SESSION" /dev/null > /tmp/zellij-start.log 2>&1 &
 ZELLIJ_PID=$!
 
 # Wait for session
