@@ -2,9 +2,16 @@ FROM ubuntu:24.04
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-       curl ca-certificates util-linux \
-    && curl -L https://github.com/zellij-org/zellij/releases/download/v0.43.1/zellij-x86_64-unknown-linux-musl.tar.gz \
-       | tar xz -C /usr/local/bin \
+       ca-certificates curl util-linux python3 \
     && rm -rf /var/lib/apt/lists/*
+
+# Download pinned Zellij build from dapi/zellij-main releases
+ENV ZELLIJ_VERSION=v0.44.0-a8d99b6
+ENV ZELLIJ_SHA256=a9c54096bb7968326f5262ec302cd36d72698df636da0c66045ee7f195a85669
+RUN curl -sL "https://github.com/dapi/zellij-main/releases/download/${ZELLIJ_VERSION}/zellij" -o /tmp/zellij \
+    && echo "${ZELLIJ_SHA256}  /tmp/zellij" | sha256sum -c - \
+    && install -Dm755 /tmp/zellij /usr/local/bin/zellij \
+    && rm /tmp/zellij \
+    && zellij --version
 
 WORKDIR /test

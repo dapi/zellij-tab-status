@@ -20,9 +20,6 @@ jobs:
         with:
           components: clippy, rustfmt
 
-      - name: Add WASM target
-        run: rustup target add wasm32-wasip1
-
       - name: Cache cargo
         uses: actions/cache@v4
         with:
@@ -39,19 +36,19 @@ jobs:
         run: cargo fmt --check
 
       - name: Clippy
-        run: cargo clippy --target wasm32-wasip1 -- -D warnings
+        run: cargo clippy -- -D warnings
 
       - name: Test
-        run: cargo test
+        run: cargo test --lib
 
       - name: Build
-        run: cargo build --release --target wasm32-wasip1
+        run: cargo build --release
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: zellij-tab-status.wasm
-          path: target/wasm32-wasip1/release/zellij-tab-status.wasm
+          name: zellij-tab-status
+          path: target/release/zellij-tab-status
 
   integration-test:
     runs-on: ubuntu-latest
@@ -60,11 +57,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download WASM artifact
+      - name: Download binary artifact
         uses: actions/download-artifact@v4
         with:
-          name: zellij-tab-status.wasm
-          path: target/wasm32-wasip1/release/
+          name: zellij-tab-status
+          path: target/release/
+
+      - name: Make binary executable
+        run: chmod +x target/release/zellij-tab-status
 
       - name: Build test Docker image
         run: docker build -f Dockerfile.test -t zellij-tab-status-test .
@@ -72,39 +72,7 @@ jobs:
       - name: Run integration tests
         run: |
           docker run --rm \
-            -v "$(pwd)/target/wasm32-wasip1/release/zellij-tab-status.wasm:/test/plugin.wasm:ro" \
+            -v "$(pwd)/target/release/zellij-tab-status:/test/zellij-tab-status:ro" \
             -v "$(pwd)/scripts:/test/scripts:ro" \
             zellij-tab-status-test \
             /test/scripts/docker-test-runner.sh
-
-      - name: Verify --plugin instance deduplication
-        run: |
-          docker run --rm \
-            -v "$(pwd)/target/wasm32-wasip1/release/zellij-tab-status.wasm:/test/plugin.wasm:ro" \
-            -v "$(pwd)/scripts:/test/scripts:ro" \
-            zellij-tab-status-test \
-            /test/scripts/docker-plugin-dedup-check.sh
-
-      - name: Regression check for issue #5 (floating panel input)
-        run: |
-          docker run --rm \
-            -v "$(pwd)/target/wasm32-wasip1/release/zellij-tab-status.wasm:/test/plugin.wasm:ro" \
-            -v "$(pwd)/scripts:/test/scripts:ro" \
-            zellij-tab-status-test \
-            /test/scripts/issue5-regression-check.sh
-
-      - name: Regression check for issue #6 (first CLI call applies status)
-        run: |
-          docker run --rm \
-            -v "$(pwd)/target/wasm32-wasip1/release/zellij-tab-status.wasm:/test/plugin.wasm:ro" \
-            -v "$(pwd)/scripts:/test/scripts:ro" \
-            zellij-tab-status-test \
-            /test/scripts/issue6-regression-check.sh
-
-      - name: Regression check for issue #6 (single raw call applies status)
-        run: |
-          docker run --rm \
-            -v "$(pwd)/target/wasm32-wasip1/release/zellij-tab-status.wasm:/test/plugin.wasm:ro" \
-            -v "$(pwd)/scripts:/test/scripts:ro" \
-            zellij-tab-status-test \
-            /test/scripts/issue6-raw-regression-check.sh

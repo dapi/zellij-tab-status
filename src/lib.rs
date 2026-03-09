@@ -1,3 +1,2 @@
-pub mod pipe_handler;
-pub mod probing;
-pub mod status_utils;
+pub mod tab_name;
+pub mod zellij_api;
