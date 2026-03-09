@@ -89,7 +89,7 @@ wait_for_tab_count() {
     local actual start_time
     start_time=$(date +%s)
     while true; do
-        actual=$(zellij action list-tabs 2>/dev/null | wc -l)
+        actual=$(count_tabs)
         if [[ "$actual" -eq "$expected" ]]; then
             return 0
         fi
@@ -101,20 +101,30 @@ wait_for_tab_count() {
     done
 }
 
+count_tabs() {
+    # list-tabs may include a header line in Zellij 0.44+; count non-empty lines with tab names
+    local raw
+    raw=$(zellij action list-tabs 2>/dev/null || echo "")
+    if [[ -z "$raw" ]]; then
+        echo "0"
+        return
+    fi
+    echo "$raw" | grep -c '.' || echo "0"
+}
+
 close_extra_tabs() {
     local tab_count
-    # Always go to tab 1 first, then close the last tab repeatedly
     zellij action go-to-tab 1 2>/dev/null || true
     sleep 0.3
-    tab_count=$(zellij action list-tabs 2>/dev/null | wc -l)
+    tab_count=$(count_tabs)
     while [[ "$tab_count" -gt 1 ]]; do
         zellij action go-to-tab "$tab_count" 2>/dev/null || true
-        sleep 0.2
+        sleep 0.3
         zellij action close-tab 2>/dev/null || true
-        sleep 0.5
+        sleep 1
         zellij action go-to-tab 1 2>/dev/null || true
-        sleep 0.2
-        tab_count=$(zellij action list-tabs 2>/dev/null | wc -l)
+        sleep 0.3
+        tab_count=$(count_tabs)
     done
     sleep 0.3
 }
@@ -267,6 +277,12 @@ fi
 
 # --- Test 14: Background tab set_status ---
 echo "--- 14. Background tab: set_status from another tab ---"
+echo "  [DEBUG] Before close_extra_tabs:" >&2
+echo "  [DEBUG] list-tabs output:" >&2
+zellij action list-tabs 2>&1 | head -10 >&2 || true
+echo "  [DEBUG] count_tabs=$(count_tabs)" >&2
+echo "  [DEBUG] list-panes --json:" >&2
+zellij action list-panes --json 2>&1 | head -5 >&2 || true
 close_extra_tabs
 PANE_ID=$(discover_pane_id)
 cli --set-name "FG"
