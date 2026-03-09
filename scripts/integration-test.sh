@@ -102,14 +102,15 @@ wait_for_tab_count() {
 }
 
 count_tabs() {
-    # list-tabs may include a header line in Zellij 0.44+; count non-empty lines with tab names
+    # list-tabs in Zellij 0.44+ has a header line (TAB_ID  POSITION  NAME)
+    # Skip header by counting lines after the first
     local raw
     raw=$(zellij action list-tabs 2>/dev/null || echo "")
     if [[ -z "$raw" ]]; then
         echo "0"
         return
     fi
-    echo "$raw" | grep -c '.' || echo "0"
+    echo "$raw" | tail -n +2 | grep -c '.' || echo "0"
 }
 
 close_extra_tabs() {
@@ -277,12 +278,6 @@ fi
 
 # --- Test 14: Background tab set_status ---
 echo "--- 14. Background tab: set_status from another tab ---"
-echo "  [DEBUG] Before close_extra_tabs:" >&2
-echo "  [DEBUG] list-tabs output:" >&2
-zellij action list-tabs 2>&1 | head -10 >&2 || true
-echo "  [DEBUG] count_tabs=$(count_tabs)" >&2
-echo "  [DEBUG] list-panes --json:" >&2
-zellij action list-panes --json 2>&1 | head -5 >&2 || true
 close_extra_tabs
 PANE_ID=$(discover_pane_id)
 cli --set-name "FG"
