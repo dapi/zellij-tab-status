@@ -1,24 +1,17 @@
 [package]
 name = "zellij-tab-status"
-version = "0.7.5"
+version = "0.8.0"
 edition = "2021"
 authors = ["Danil Pismenny <danilpismenny@gmail.com>"]
-description = "Zellij plugin for managing tab status with emoji prefixes"
+description = "CLI tool for managing tab status with emoji prefixes in Zellij"
 license = "MIT"
 repository = "https://github.com/dapi/zellij-tab-status"
 
 [[bin]]
 name = "zellij-tab-status"
 path = "src/main.rs"
-# Plugin host symbols exist only inside Zellij runtime.
-test = false
 
 [dependencies]
-zellij-tile = "0.43.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 unicode-segmentation = "1.10"
-
-[profile.release]
-opt-level = "s"
-lto = true

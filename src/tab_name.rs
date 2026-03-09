@@ -16,9 +16,6 @@ fn parse_status_block(name: &str) -> Option<(&str, &str)> {
     let rest = name.strip_prefix(MARKER)?;
     let mut graphemes = rest.graphemes(true);
     let status = graphemes.next()?;
-    if status.is_empty() {
-        return None;
-    }
     let after_status = graphemes.as_str();
     let base = after_status.strip_prefix(' ')?;
     Some((status, base))
