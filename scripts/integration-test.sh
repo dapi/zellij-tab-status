@@ -103,18 +103,19 @@ wait_for_tab_count() {
 
 close_extra_tabs() {
     local tab_count
+    # Always go to tab 1 first, then close the last tab repeatedly
+    zellij action go-to-tab 1 2>/dev/null || true
+    sleep 0.3
     tab_count=$(zellij action list-tabs 2>/dev/null | wc -l)
-    echo "  [close_extra_tabs] initial tab_count=$tab_count" >&2
     while [[ "$tab_count" -gt 1 ]]; do
-        echo "  [close_extra_tabs] closing tab $tab_count (of $tab_count)" >&2
         zellij action go-to-tab "$tab_count" 2>/dev/null || true
         sleep 0.2
         zellij action close-tab 2>/dev/null || true
         sleep 0.5
+        zellij action go-to-tab 1 2>/dev/null || true
+        sleep 0.2
         tab_count=$(zellij action list-tabs 2>/dev/null | wc -l)
-        echo "  [close_extra_tabs] after close: tab_count=$tab_count" >&2
     done
-    zellij action go-to-tab 1 2>/dev/null || true
     sleep 0.3
 }
 
