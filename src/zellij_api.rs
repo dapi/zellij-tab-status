@@ -15,7 +15,7 @@ struct TabEntry {
 /// Resolve pane_id to tab_id via `zellij action list-panes --json`
 pub fn resolve_tab_id(pane_id: u32) -> Result<u32, String> {
     let output = Command::new("zellij")
-        .args(["action", "list-panes", "--json"])
+        .args(["action", "list-panes", "--tab", "--json"])
         .output()
         .map_err(|e| format!("Failed to run 'zellij action list-panes --json': {}", e))?;
 
