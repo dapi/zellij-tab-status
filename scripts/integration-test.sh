@@ -390,6 +390,27 @@ exit_code=$?
 set -e
 assert_eq "$exit_code" "1" "non-existent pane = exit 1"
 
+# --set-name without value
+set +e
+zellij-tab-status --pane-id "$PANE_ID" --set-name 2>/dev/null
+exit_code=$?
+set -e
+assert_eq "$exit_code" "2" "--set-name without value = exit 2"
+
+# --pane-id with non-integer
+set +e
+zellij-tab-status --pane-id abc --get 2>/dev/null
+exit_code=$?
+set -e
+assert_eq "$exit_code" "2" "--pane-id non-integer = exit 2"
+
+# --tab-id with non-existent ID
+set +e
+zellij-tab-status --tab-id 999999 --get 2>/dev/null
+exit_code=$?
+set -e
+assert_eq "$exit_code" "1" "non-existent tab-id = exit 1"
+
 # --- Summary ---
 echo ""
 echo "==============================="
