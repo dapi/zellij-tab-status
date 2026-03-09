@@ -14,7 +14,7 @@ Usage:
   zellij-tab-status --get, -g      Get current status emoji
   zellij-tab-status --get-status   Get current status emoji (alias)
   zellij-tab-status --name, -n     Get base name (without status)
-  zellij-tab-status --set-name, -s Set tab name (preserving status)
+  zellij-tab-status --set-name, -s <name>  Set tab name (preserving status)
   zellij-tab-status --version, -v  Show version
   zellij-tab-status --help, -h     Show this help
 
@@ -119,7 +119,7 @@ fn main() {
             println!("{}", base);
         }
         "set_status" => {
-            let emoji = command_value.unwrap();
+            let emoji = command_value.expect("set_status requires emoji value");
             let name = get_current_tab_name(tab_id);
             let new_name = tab_name::set_status(&name, &emoji);
             if new_name != name {
@@ -134,7 +134,7 @@ fn main() {
             }
         }
         "set_name" => {
-            let new_base = command_value.unwrap();
+            let new_base = command_value.expect("set_name requires name value");
             let name = get_current_tab_name(tab_id);
             let new_name = tab_name::set_name(&name, &new_base);
             if new_name != name {
