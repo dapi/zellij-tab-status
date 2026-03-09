@@ -102,15 +102,15 @@ wait_for_tab_count() {
 }
 
 count_tabs() {
-    # list-tabs in Zellij 0.44+ has a header line (TAB_ID  POSITION  NAME)
-    # Skip header by counting lines after the first
+    # list-tabs in Zellij 0.44+ has a header line starting with TAB_ID
+    # Skip it if present, count remaining non-empty lines
     local raw
     raw=$(zellij action list-tabs 2>/dev/null || echo "")
     if [[ -z "$raw" ]]; then
         echo "0"
         return
     fi
-    echo "$raw" | tail -n +2 | grep -c '.' || echo "0"
+    echo "$raw" | grep -v '^TAB_ID' | grep -c '.' || echo "0"
 }
 
 close_extra_tabs() {
@@ -368,6 +368,27 @@ zellij-tab-status --invalid-option 2>/dev/null
 exit_code=$?
 set -e
 assert_eq "$exit_code" "2" "unknown option = exit 2"
+
+# Duplicate positional args
+set +e
+zellij-tab-status --pane-id "$PANE_ID" 🎯 🔥 2>/dev/null
+exit_code=$?
+set -e
+assert_eq "$exit_code" "2" "duplicate positional args = exit 2"
+
+# Invalid $ZELLIJ_PANE_ID
+set +e
+ZELLIJ_PANE_ID=abc zellij-tab-status --get 2>/dev/null
+exit_code=$?
+set -e
+assert_eq "$exit_code" "2" "invalid ZELLIJ_PANE_ID = exit 2"
+
+# Non-existent pane ID
+set +e
+zellij-tab-status --pane-id 999999 --get 2>/dev/null
+exit_code=$?
+set -e
+assert_eq "$exit_code" "1" "non-existent pane = exit 1"
 
 # --- Summary ---
 echo ""

@@ -2,11 +2,11 @@ FROM ubuntu:24.04
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-       ca-certificates curl util-linux python3 \
+       ca-certificates curl jq util-linux python3 \
     && rm -rf /var/lib/apt/lists/*
 
 # Download pre-built Zellij from dapi/zellij-main releases
-RUN curl -sL "$(curl -s https://api.github.com/repos/dapi/zellij-main/releases/latest | grep browser_download_url | cut -d '"' -f 4)" -o /tmp/zellij \
+RUN curl -sL "$(curl -s https://api.github.com/repos/dapi/zellij-main/releases/latest | jq -r '.assets[0].browser_download_url')" -o /tmp/zellij \
     && install -Dm755 /tmp/zellij /usr/local/bin/zellij \
     && rm /tmp/zellij \
     && zellij --version
