@@ -14,10 +14,9 @@ if [[ ! -f "$CLI_BINARY" ]]; then
     echo "ERROR: CLI binary not found at $CLI_BINARY"
     exit 1
 fi
-chmod +x "$CLI_BINARY"
-
 # Put binary on PATH
 cp "$CLI_BINARY" /usr/local/bin/zellij-tab-status
+chmod +x /usr/local/bin/zellij-tab-status
 
 # Configure Zellij
 mkdir -p /root/.config/zellij
