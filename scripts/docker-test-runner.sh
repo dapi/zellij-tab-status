@@ -24,9 +24,13 @@ cat > /root/.config/zellij/config.kdl <<EOF
 default_layout "compact"
 EOF
 
+# Verify zellij binary works
+echo "Zellij version: $(zellij --version 2>&1 || echo 'FAILED')"
+ldd /usr/local/bin/zellij 2>&1 | grep "not found" && echo "WARNING: missing libraries" || true
+
 # Start Zellij headlessly (script provides PTY)
 echo "Starting Zellij session '$SESSION'..."
-script -qfc "zellij --session $SESSION options --disable-mouse-mode" /dev/null > /dev/null 2>&1 &
+script -qfc "zellij --session $SESSION options --disable-mouse-mode" /dev/null > /tmp/zellij-start.log 2>&1 &
 ZELLIJ_PID=$!
 
 # Wait for session
@@ -36,7 +40,9 @@ for i in $(seq 1 30); do
         break
     fi
     if ! kill -0 $ZELLIJ_PID 2>/dev/null; then
-        echo "ERROR: Zellij process died"
+        echo "ERROR: Zellij process died. Start log:"
+        cat /tmp/zellij-start.log 2>/dev/null || true
+        echo "---"
         exit 1
     fi
     sleep 0.5
