@@ -86,6 +86,10 @@ fn main() {
                     eprintln!("Error: unknown option '{}'", other);
                     process::exit(2);
                 }
+                if command.is_some() {
+                    eprintln!("Error: unexpected positional argument '{}'", other);
+                    process::exit(2);
+                }
                 // Positional argument = set_status with emoji
                 command = Some("set_status".to_string());
                 command_value = Some(other.to_string());
@@ -119,7 +123,10 @@ fn main() {
             println!("{}", base);
         }
         "set_status" => {
-            let emoji = command_value.expect("set_status requires emoji value");
+            let emoji = command_value.unwrap_or_else(|| {
+                eprintln!("Error: set_status requires an emoji argument");
+                process::exit(2);
+            });
             let name = get_current_tab_name(tab_id);
             let new_name = tab_name::set_status(&name, &emoji);
             if new_name != name {
@@ -134,7 +141,10 @@ fn main() {
             }
         }
         "set_name" => {
-            let new_base = command_value.expect("set_name requires name value");
+            let new_base = command_value.unwrap_or_else(|| {
+                eprintln!("Error: --set-name requires a name argument");
+                process::exit(2);
+            });
             let name = get_current_tab_name(tab_id);
             let new_name = tab_name::set_name(&name, &new_base);
             if new_name != name {
