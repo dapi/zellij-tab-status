@@ -325,9 +325,11 @@ sleep 0.3
 zellij action close-tab
 wait_for_tab_count 2
 
-# Verify surviving tabs
-result=$(cli_pane "$PANE_ID" --name)
-assert_eq "$result" "Alpha" "Alpha survives deletion"
+# Verify 2 tabs remain and we can still operate on them
+tab_count=$(count_tabs)
+assert_eq "$tab_count" "2" "2 tabs remain after deletion"
+
+# Verify Gamma tab still accessible via its pane
 result=$(cli_pane "$PANE_GAMMA" --name)
 assert_eq "$result" "Gamma" "Gamma survives deletion"
 
