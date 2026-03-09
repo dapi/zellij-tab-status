@@ -76,6 +76,11 @@ discover_pane_id() {
     local result
     result=$(cat "$tmp_file" 2>/dev/null | tr -d '[:space:]')
     rm -f "$tmp_file" 2>/dev/null
+    if [[ -z "$result" ]]; then
+        echo "ERROR: discover_pane_id returned empty" >&2
+        echo "0"
+        return 1
+    fi
     echo "$result"
 }
 

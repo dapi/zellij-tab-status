@@ -87,7 +87,7 @@ fn main() {
                     process::exit(2);
                 }
                 if command.is_some() {
-                    eprintln!("Error: unexpected positional argument '{}'", other);
+                    eprintln!("Error: unexpected argument '{}' (command already specified)", other);
                     process::exit(2);
                 }
                 // Positional argument = set_status with emoji

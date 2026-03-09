@@ -51,8 +51,8 @@ fi
 
 sleep 2
 
-# Close floating "about" pane
-zellij action toggle-floating-panes
+# Close floating "about" pane if present (may not appear in all Zellij versions)
+zellij action toggle-floating-panes 2>/dev/null || true
 sleep 1
 
 # Discover pane ID
