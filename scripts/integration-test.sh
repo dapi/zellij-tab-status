@@ -209,6 +209,16 @@ sleep 0.3
 result=$(cli)
 assert_eq "$result" "🤖" "no args returns status"
 
+# --- Test 10b: $ZELLIJ_PANE_ID env var resolution ---
+echo "--- 10b. \$ZELLIJ_PANE_ID env var ---"
+cli --clear
+cli 🌍
+sleep 0.3
+result=$(ZELLIJ_PANE_ID="$PANE_ID" zellij-tab-status --get)
+assert_eq "$result" "🌍" "\$ZELLIJ_PANE_ID env var resolves correctly"
+cli --clear
+sleep 0.3
+
 # --- Test 11: Multi-tab set_status targets correct tab ---
 echo "--- 11. Multi-tab: set_status by pane_id ---"
 cli --clear
