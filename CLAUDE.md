@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-**zellij-tab-status** — Native Rust CLI tool for Zellij terminal multiplexer. Manages tab status with emoji prefixes using `zellij action` commands. Requires Zellij main branch (pinned commit `a8d99b64a3`).
+**zellij-tab-status** — Native Rust CLI tool for Zellij terminal multiplexer. Manages tab status with emoji prefixes using `zellij action` commands. Requires Zellij >= v0.44.0 (for `rename-tab-by-id`).
 
 ## Tech Stack
 
@@ -10,7 +10,7 @@
 - **Target:** Native binary (no WASM)
 - **Dependencies:** serde, serde_json, unicode-segmentation
 - **Zellij API:** `zellij action` CLI commands (`list-panes --json`, `list-tabs --json`, `rename-tab-by-id`)
-- **Testing:** Docker + Zellij (built from source) for integration tests
+- **Testing:** Docker + Zellij v0.44.0 (official release) for integration tests
 
 ## Build Commands
 

@@ -22,6 +22,7 @@ chmod +x /usr/local/bin/zellij-tab-status
 mkdir -p /root/.config/zellij
 cat > /root/.config/zellij/config.kdl <<EOF
 default_layout "compact"
+show_release_notes false
 EOF
 
 # Verify zellij binary works

@@ -5,13 +5,14 @@ RUN apt-get update \
        ca-certificates curl util-linux python3 \
     && rm -rf /var/lib/apt/lists/*
 
-# Download pinned Zellij build from dapi/zellij-main releases
-ENV ZELLIJ_VERSION=v0.44.0-a8d99b6
-ENV ZELLIJ_SHA256=a9c54096bb7968326f5262ec302cd36d72698df636da0c66045ee7f195a85669
-RUN curl -sL "https://github.com/dapi/zellij-main/releases/download/${ZELLIJ_VERSION}/zellij" -o /tmp/zellij \
+# Download official Zellij release
+ENV ZELLIJ_VERSION=v0.44.0
+ENV ZELLIJ_SHA256=d7239c8f8c08dc7bb73920fa7757d776a81f899a45edfc1d0c862a0368db7127
+RUN curl -sL "https://github.com/zellij-org/zellij/releases/download/${ZELLIJ_VERSION}/zellij-x86_64-unknown-linux-musl.tar.gz" -o /tmp/zellij.tar.gz \
+    && tar -xzf /tmp/zellij.tar.gz -C /tmp \
     && echo "${ZELLIJ_SHA256}  /tmp/zellij" | sha256sum -c - \
     && install -Dm755 /tmp/zellij /usr/local/bin/zellij \
-    && rm /tmp/zellij \
+    && rm /tmp/zellij /tmp/zellij.tar.gz \
     && zellij --version
 
 WORKDIR /test

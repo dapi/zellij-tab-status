@@ -69,19 +69,52 @@ query_tab_names() {
 }
 
 discover_pane_id() {
-    local tmp_file="/tmp/pane_id_discover_$$"
+    local tmp_file="/tmp/pane_id_discover_$$_${RANDOM}"
+    rm -f "$tmp_file"
     zellij action write-chars "echo \$ZELLIJ_PANE_ID > $tmp_file"
     zellij action write 13
-    sleep 1
-    local result
-    result=$(cat "$tmp_file" 2>/dev/null | tr -d '[:space:]')
-    rm -f "$tmp_file" 2>/dev/null
-    if [[ -z "$result" ]]; then
-        echo "ERROR: discover_pane_id returned empty" >&2
-        echo "0"
-        return 1
-    fi
-    echo "$result"
+    local attempts=0
+    while [[ $attempts -lt 10 ]]; do
+        sleep 0.5
+        if [[ -s "$tmp_file" ]]; then
+            local result
+            result=$(cat "$tmp_file" | tr -d '[:space:]')
+            rm -f "$tmp_file"
+            if [[ -n "$result" && "$result" =~ ^[0-9]+$ ]]; then
+                echo "$result"
+                return 0
+            fi
+        fi
+        ((attempts++)) || true
+    done
+    rm -f "$tmp_file"
+    echo "ERROR: discover_pane_id timeout" >&2
+    echo "0"
+    return 1
+}
+
+# Find a non-plugin terminal pane in a given tab using list-panes --json
+find_terminal_pane_in_tab() {
+    local target_tab_id="$1"
+    zellij action list-panes --json 2>/dev/null | python3 -c "
+import sys, json
+for p in json.load(sys.stdin):
+    if p['tab_id'] == $target_tab_id and not p.get('is_plugin', False):
+        print(p['id'])
+        break
+" 2>/dev/null
+}
+
+# Get tab_id for a given pane_id from list-panes --json
+get_tab_id_for_pane() {
+    local pane_id="$1"
+    zellij action list-panes --json 2>/dev/null | python3 -c "
+import sys, json
+for p in json.load(sys.stdin):
+    if p['id'] == $pane_id and not p.get('is_plugin', False):
+        print(p['tab_id'])
+        break
+" 2>/dev/null
 }
 
 wait_for_tab_count() {
@@ -286,17 +319,32 @@ sleep 0.3
 
 zellij action new-tab
 wait_for_tab_count 2
-PANE_BG=$(discover_pane_id)
-cli_pane "$PANE_BG" --set-name "BG"
-sleep 0.3
-
-# From tab2, set status on tab1
-cli_pane "$PANE_ID" 🌟
 sleep 0.5
-result=$(cli_pane "$PANE_ID" --get)
-assert_eq "$result" "🌟" "set_status works from background"
-result=$(cli_pane "$PANE_BG" --get)
-assert_eq "$result" "" "BG tab untouched"
+
+# Find BG pane via list-panes --json (non-plugin pane in a different tab)
+FG_TAB=$(get_tab_id_for_pane "$PANE_ID")
+PANE_BG=$(zellij action list-panes --json 2>/dev/null | python3 -c "
+import sys, json
+for p in json.load(sys.stdin):
+    if p['tab_id'] != $FG_TAB and not p.get('is_plugin', False):
+        print(p['id'])
+        break
+" 2>/dev/null)
+
+if [[ -z "$PANE_BG" ]]; then
+    echo "  SKIP: could not find BG pane (no non-plugin pane in new tab)"
+else
+    cli_pane "$PANE_BG" --set-name "BG"
+    sleep 0.3
+
+    # From tab2, set status on tab1
+    cli_pane "$PANE_ID" 🌟
+    sleep 0.5
+    result=$(cli_pane "$PANE_ID" --get)
+    assert_eq "$result" "🌟" "set_status works from background"
+    result=$(cli_pane "$PANE_BG" --get)
+    assert_eq "$result" "" "BG tab untouched"
+fi
 
 # --- Test 15: Tab delete + create ---
 echo "--- 15. Tab lifecycle: delete + create ---"

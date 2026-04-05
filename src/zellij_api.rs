@@ -9,6 +9,8 @@ fn zellij_bin() -> String {
 struct PaneEntry {
     id: u32,
     tab_id: u32,
+    #[serde(default)]
+    is_plugin: bool,
 }
 
 #[derive(serde::Deserialize)]
@@ -37,9 +39,11 @@ pub fn resolve_tab_id(pane_id: u32) -> Result<u32, String> {
     let panes: Vec<PaneEntry> =
         serde_json::from_str(&stdout).map_err(|e| format!("Failed to parse panes JSON: {}", e))?;
 
+    // Prefer non-plugin panes (plugin pane IDs can overlap with terminal pane IDs)
     panes
         .iter()
-        .find(|p| p.id == pane_id)
+        .find(|p| p.id == pane_id && !p.is_plugin)
+        .or_else(|| panes.iter().find(|p| p.id == pane_id))
         .map(|p| p.tab_id)
         .ok_or_else(|| format!("Pane ID {} not found in list-panes output", pane_id))
 }
