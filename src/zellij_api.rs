@@ -1,5 +1,10 @@
 use std::process::Command;
 
+/// Returns the zellij binary path: `$ZELLIJ_PATH` if set, otherwise `"zellij"`.
+fn zellij_bin() -> String {
+    std::env::var("ZELLIJ_PATH").unwrap_or_else(|_| "zellij".to_string())
+}
+
 #[derive(serde::Deserialize)]
 struct PaneEntry {
     id: u32,
@@ -14,7 +19,8 @@ struct TabEntry {
 
 /// Resolve pane_id to tab_id via `zellij action list-panes --json`
 pub fn resolve_tab_id(pane_id: u32) -> Result<u32, String> {
-    let output = Command::new("zellij")
+    let bin = zellij_bin();
+    let output = Command::new(&bin)
         .args(["action", "list-panes", "--json"])
         .output()
         .map_err(|e| format!("Failed to run 'zellij action list-panes --json': {}", e))?;
@@ -40,7 +46,8 @@ pub fn resolve_tab_id(pane_id: u32) -> Result<u32, String> {
 
 /// Get tab name by tab_id via `zellij action list-tabs --json`
 pub fn get_tab_name(tab_id: u32) -> Result<String, String> {
-    let output = Command::new("zellij")
+    let bin = zellij_bin();
+    let output = Command::new(&bin)
         .args(["action", "list-tabs", "--json"])
         .output()
         .map_err(|e| format!("Failed to run 'zellij action list-tabs --json': {}", e))?;
@@ -65,7 +72,8 @@ pub fn get_tab_name(tab_id: u32) -> Result<String, String> {
 
 /// Rename tab by id via `zellij action rename-tab-by-id <id> <name>`
 pub fn rename_tab(tab_id: u32, new_name: &str) -> Result<(), String> {
-    let output = Command::new("zellij")
+    let bin = zellij_bin();
+    let output = Command::new(&bin)
         .args(["action", "rename-tab-by-id", &tab_id.to_string(), new_name])
         .output()
         .map_err(|e| format!("Failed to run 'zellij action rename-tab-by-id': {}", e))?;
